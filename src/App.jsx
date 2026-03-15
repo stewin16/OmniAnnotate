@@ -375,29 +375,36 @@ function App() {
 
     const newAnnotations = { ...annotations };
     for (const file of labelFiles) {
-      const baseName = file.name.replace('.txt', '');
-      const imgIdx = allImages.findIndex(img => img.name.replace(/\.[^/.]+$/, "") === baseName);
+      const labelBaseName = file.name.replace(/\.[^/.]+$/, "").toLowerCase();
+      // Match image by normalized base name
+      const imgIdx = allImages.findIndex(img => 
+        img.name.replace(/\.[^/.]+$/, "").toLowerCase() === labelBaseName
+      );
       
       if (imgIdx !== -1) {
         const img = allImages[imgIdx];
         const text = await file.text();
-        const imgAnns = text.split('\n').filter(l => l.trim()).map(line => {
-          const parts = line.split(/\s+/).map(Number);
-          if (parts.length < 5) return null;
-          const [cls, xc, yc, w, h] = parts;
-          // Scale relative coordinates to absolute image pixels
-          return { 
-            id: Math.random(), 
-            type: 'box', 
-            class: cls, 
-            coords: { 
-              x: (xc - w/2) * img.width, 
-              y: (yc - h/2) * img.height, 
-              w: w * img.width, 
-              h: h * img.height 
-            } 
-          };
-        }).filter(a => a);
+        const imgAnns = text.split('\n')
+          .map(l => l.trim())
+          .filter(l => l && !l.startsWith('#')) // Support comments if any
+          .map(line => {
+            const parts = line.split(/\s+/).map(Number);
+            if (parts.length < 5 || parts.some(isNaN)) return null;
+            const [cls, xc, yc, w, h] = parts;
+            // Scale relative coordinates to absolute image pixels
+            return { 
+              id: Math.random(), 
+              type: 'box', 
+              class: cls, 
+              coords: { 
+                x: (xc - w/2) * img.width, 
+                y: (yc - h/2) * img.height, 
+                w: w * img.width, 
+                h: h * img.height 
+              } 
+            };
+          }).filter(a => a);
+        
         newAnnotations[imgIdx] = [...(newAnnotations[imgIdx] || []), ...imgAnns];
       }
     }
