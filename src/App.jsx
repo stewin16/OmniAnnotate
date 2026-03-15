@@ -58,6 +58,9 @@ function App() {
   const [showHUD, setShowHUD] = useState(true);
   const [showHelp, setShowHelp] = useState(false);
   const [showAnalytics, setShowAnalytics] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(window.innerWidth > 1024);
+  const [rightSidebarOpen, setRightSidebarOpen] = useState(window.innerWidth > 1280);
+  const [showMobileMenu, setShowMobileMenu] = useState(false);
   const [hiddenClasses, setHiddenClasses] = useState(new Set());
   const [isSyncing, setIsSyncing] = useState(false);
   const [filterMode, setFilterMode] = useState('all'); // 'all', 'annotated', 'pending'
@@ -448,11 +451,18 @@ function App() {
     <ErrorBoundary>
       <div className="app-container">
         <header className="app-header">
-          <div className="brand">
+          <div className="brand" style={{ gap: '8px' }}>
+            <button 
+              className="btn-icon" 
+              style={{ padding: 8, background: sidebarOpen ? 'var(--bg-color)' : 'transparent', borderRadius: 8 }}
+              onClick={() => setSidebarOpen(!sidebarOpen)}
+            >
+              <Grid size={20} color={sidebarOpen ? 'var(--accent-color)' : 'var(--text-dim)'} />
+            </button>
             <img src="/omni-logo.png" alt="OmniAnnotate" style={{ width: '28px', height: '28px', objectFit: 'contain' }} />
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
-                <h2 style={{ letterSpacing: 1, fontWeight: 800, margin: 0, color: '#0f172a' }}>OMNI<span style={{ color: 'var(--accent-color)' }}>ANNOTATE</span></h2>
-                <span style={{ fontSize: 10, color: 'var(--text-dim)', letterSpacing: 1, fontWeight: 700 }}>ADVANCED_PRECISION_MEDIA_SUITE</span>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }} className="brand-text">
+                <h2 style={{ letterSpacing: 1, fontWeight: 800, margin: 0, color: '#0f172a', fontSize: '18px' }}>OMNI<span style={{ color: 'var(--accent-color)' }}>ANNOTATE</span></h2>
+                <span className="brand-subtitle" style={{ fontSize: 10, color: 'var(--text-dim)', letterSpacing: 1, fontWeight: 700 }}>ADVANCED_PRECISION_MEDIA_SUITE</span>
             </div>
             <div style={{ marginLeft: '12px', fontSize: '10px', color: saveStatus === 'saved' ? 'var(--success-color)' : 'var(--text-dim)', opacity: saveStatus === 'idle' ? 0 : 1, transition: 'opacity 0.3s', fontWeight: 800 }}>
               {saveStatus === 'syncing' ? 'SYNCING...' : 'ARCHIVE_STABLE'}
@@ -471,7 +481,7 @@ function App() {
             </motion.div>
           )}
 
-          <div style={{ display: 'flex', gap: '8px' }}>
+          <div className="header-actions-desktop" style={{ display: 'flex', gap: '8px' }}>
             <button className="btn btn-primary" onClick={() => setShowImportHub(true)}>
               <FileSymlink size={16} /> INDEX FILES
             </button>
@@ -482,25 +492,57 @@ function App() {
             </div>
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', background: 'var(--bg-color)', padding: '6px 12px', borderRadius: '2px', border: '1px solid var(--border-color)', boxShadow: 'inset 2px 2px 0px rgba(44, 36, 27, 0.05)' }}>
-            <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-dim)' }}>FILE ID:</span>
-            {images.length > 0 ? (
-              <input
-                type="number"
-                value={currentIndex + 1}
-                onChange={(e) => {
-                  const val = parseInt(e.target.value);
-                  if (!isNaN(val) && val >= 1 && val <= images.length) setCurrentIndex(val - 1);
-                }}
-                style={{ width: 40, background: 'transparent', border: 'none', borderBottom: '1px solid var(--text-color)', textAlign: 'center', fontWeight: 'bold', fontSize: 14, color: 'var(--text-color)', outline: 'none', fontFamily: 'var(--font-main)' }}
-              />
-            ) : <span style={{ fontWeight: 'bold' }}>0</span>}
-            <span style={{ fontSize: 12, fontWeight: 700 }}>/ {images.length}</span>
+          <div className="header-actions-mobile">
+             <button className="btn btn-primary" onClick={() => setShowMobileMenu(!showMobileMenu)}>
+               <Layers size={16} /> EXPORT
+             </button>
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'var(--bg-color)', padding: '6px 12px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+              <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-dim)' }}>FILE:</span>
+              {images.length > 0 ? (
+                <input
+                  type="number"
+                  value={currentIndex + 1}
+                  onChange={(e) => {
+                    const val = parseInt(e.target.value);
+                    if (!isNaN(val) && val >= 1 && val <= images.length) setCurrentIndex(val - 1);
+                  }}
+                  style={{ width: 40, background: 'transparent', border: 'none', borderBottom: '1px solid var(--text-color)', textAlign: 'center', fontWeight: 'bold', fontSize: 14, color: 'var(--text-color)', outline: 'none' }}
+                />
+              ) : <span style={{ fontWeight: 'bold' }}>0</span>}
+              <span style={{ fontSize: 12, fontWeight: 700 }}>/ {images.length}</span>
+            </div>
+            <button 
+              className="btn-icon" 
+              style={{ padding: 8, background: rightSidebarOpen ? 'var(--bg-color)' : 'transparent', borderRadius: 8 }}
+              onClick={() => setRightSidebarOpen(!rightSidebarOpen)}
+            >
+              <Activity size={20} color={rightSidebarOpen ? 'var(--accent-color)' : 'var(--text-dim)'} />
+            </button>
           </div>
         </header>
 
         <main className="main-content">
-          <aside className="sidebar">
+          <AnimatePresence>
+            {(sidebarOpen || rightSidebarOpen) && window.innerWidth <= 1024 && (
+              <motion.div 
+                className="drawer-backdrop" 
+                initial={{ opacity: 0 }} 
+                animate={{ opacity: 1 }} 
+                exit={{ opacity: 0 }}
+                onClick={() => { setSidebarOpen(false); setRightSidebarOpen(false); }}
+              />
+            )}
+          </AnimatePresence>
+
+          <aside className={`sidebar ${sidebarOpen ? '' : 'collapsed'}`}>
+            {window.innerWidth <= 1024 && (
+              <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 20 }}>
+                <button className="btn-icon" onClick={() => setSidebarOpen(false)}><X size={24} /></button>
+              </div>
+            )}
              <div className="sidebar-section">
                 <h3 className="section-title">ANNOTATION TOOLS</h3>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
@@ -615,7 +657,12 @@ function App() {
             )}
           </section>
 
-          <aside className="right-sidebar">
+          <aside className={`right-sidebar ${rightSidebarOpen ? '' : 'collapsed'}`}>
+            {window.innerWidth <= 1024 && (
+              <div style={{ display: 'flex', justifyContent: 'flex-start', marginBottom: 20 }}>
+                <button className="btn-icon" onClick={() => setRightSidebarOpen(false)}><X size={24} /></button>
+              </div>
+            )}
             <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px dashed var(--border-color)', paddingBottom: 12 }}>
               <span style={{ fontSize: 13, fontWeight: 'bold', letterSpacing: 1 }}>CLASSIFICATIONS</span>
               <button className="btn" style={{ padding: '2px 6px' }} onClick={() => setShowAddClass(true)}><Plus size={14} /></button>
@@ -753,6 +800,22 @@ function App() {
                 </label>
               </div>
             </div>
+            </div>
+          )}
+          {showMobileMenu && (
+            <div className="modal-overlay" onClick={() => setShowMobileMenu(false)}>
+              <div className="modal-content" onClick={e => e.stopPropagation()}>
+                 <h2 style={{ marginBottom: 24, fontWeight: 800 }}>PROJECT ACTIONS</h2>
+                 <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                    <button className="btn btn-primary" style={{ width: '100%' }} onClick={() => { setShowImportHub(true); setShowMobileMenu(false); }}>
+                      <FileSymlink size={16} /> INDEX FILES
+                    </button>
+                    <div style={{ height: 1, background: 'var(--border-color)', margin: '8px 0' }} />
+                    <button className="btn btn-success" style={{ width: '100%' }} onClick={() => { handleDownloadFullProject(); setShowMobileMenu(false); }}>EXPORT YOLO (.ZIP)</button>
+                    <button className="btn btn-success" style={{ width: '100%' }} onClick={() => { handleDownloadCOCO(); setShowMobileMenu(false); }}>EXPORT COCO (.JSON)</button>
+                    <button className="btn btn-success" style={{ width: '100%' }} onClick={() => { handleDownloadVOC(); setShowMobileMenu(false); }}>EXPORT VOC (.XML)</button>
+                 </div>
+              </div>
             </div>
           )}
         </AnimatePresence>
