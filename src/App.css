@@ -11,7 +11,7 @@
   --success-color: #065f46; /* Official Green */
   --poly-color: #d97706; /* Archival Orange */
   --box-color: #991b1b;
-  --font-main: 'Inter', system-ui, Avenir, Helvetica, Arial, sans-serif;
+  --font-main: 'Outfit', system-ui, -apple-system, sans-serif;
   --panel-shadow: 2px 4px 12px rgba(44, 36, 27, 0.08);
   --accent-glow: none;
 }
@@ -41,7 +41,7 @@ body {
   overflow: hidden;
 }
 
-/* Dossier Folders */
+/* OmniAnnotate Folders */
 .glass-panel {
   background: var(--panel-bg);
   border: 1px solid var(--border-color);

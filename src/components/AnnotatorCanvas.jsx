@@ -140,8 +140,13 @@ const AnnotatorCanvas = forwardRef((props, ref) => {
   // Load Image
   const [imgObj, setImgObj] = useState(null);
   useEffect(() => {
-    if (!image) return;
+    if (!image) {
+      setImgObj(null);
+      return;
+    }
+    setImgObj(null); // Clear previous image immediately
     const img = new Image();
+
     img.src = image.url;
     img.onload = () => {
       setImgObj(img);

@@ -66,6 +66,7 @@ function App() {
   const [history, setHistory] = useState({ past: [], present: {}, future: [] });
   const [flash, setFlash] = useState(0);
   const [saveStatus, setSaveStatus] = useState('idle'); // 'idle', 'syncing', 'saved'
+  const [mediaError, setMediaError] = useState(false);
   const canvasRef = useRef(null);
 
   useEffect(() => {
@@ -87,11 +88,26 @@ function App() {
 
 
   useEffect(() => {
-    if (flash > 0) {
-      const timeout = setTimeout(() => setFlash(Math.max(0, flash - 0.1)), 30);
-      return () => clearTimeout(timeout);
+    if (images.length > 0 && !mediaError) {
+      const testImg = new Image();
+      testImg.onload = () => setMediaError(false);
+      testImg.onerror = () => setMediaError(true);
+      testImg.src = images[0].url;
     }
-  }, [flash]);
+  }, [images]);
+
+  const handleRestoreSession = (e) => {
+    const files = Array.from(e.target.files);
+    const updatedImages = images.map(img => {
+      const match = files.find(f => f.name === img.name);
+      if (match) {
+         return { ...img, url: URL.createObjectURL(match), file: match };
+      }
+      return img;
+    });
+    setImages(updatedImages);
+    setMediaError(false);
+  };
 
   useEffect(() => {
     const handleKey = (e) => {
@@ -230,10 +246,17 @@ function App() {
   };
 
 
-  const handleUpload = (e) => {
+  const handleUpload = async (e) => {
     const files = Array.from(e.target.files);
-    const newImages = files.map(file => ({ name: file.name, url: URL.createObjectURL(file), file: file }));
-    setImages(prev => [...prev, ...newImages]);
+    const loadedImages = await Promise.all(files.map(file => new Promise(resolve => {
+      const url = URL.createObjectURL(file);
+      const img = new Image();
+      img.onload = () => {
+        resolve({ name: file.name, url, width: img.width, height: img.height, file });
+      };
+      img.src = url;
+    })));
+    setImages(prev => [...prev, ...loadedImages]);
   };
 
   const handleDownloadFullProject = async () => {
@@ -330,27 +353,55 @@ function App() {
     const labelFiles = files.filter(f => f.name.endsWith('.txt') && f.name !== 'classes.txt');
     const classesFile = files.find(f => f.name === 'classes.txt');
 
-    if (classesFile) { const text = await classesFile.text(); setClasses(text.split('\n').filter(l => l.trim())); }
+    if (classesFile) { 
+      const text = await classesFile.text(); 
+      setClasses(text.split('\n').map(l => l.trim()).filter(l => l)); 
+    }
 
     const loadedImages = await Promise.all(imgFiles.map(file => new Promise(resolve => {
-      const reader = new FileReader(); reader.onload = (ev) => resolve({ name: file.name, url: ev.target.result }); reader.readAsDataURL(file);
+      const url = URL.createObjectURL(file);
+      const img = new Image();
+      img.onload = () => {
+        resolve({ name: file.name, url, width: img.width, height: img.height, file });
+      };
+      img.src = url;
     })));
-    const allImages = [...images, ...loadedImages]; setImages(allImages);
+
+    const allImages = [...images, ...loadedImages]; 
+    setImages(allImages);
 
     const newAnnotations = { ...annotations };
     for (const file of labelFiles) {
-      const imgIdx = allImages.findIndex(img => img.name.replace(/\.[^/.]+$/, "") === file.name.replace('.txt', ''));
+      const baseName = file.name.replace('.txt', '');
+      const imgIdx = allImages.findIndex(img => img.name.replace(/\.[^/.]+$/, "") === baseName);
+      
       if (imgIdx !== -1) {
+        const img = allImages[imgIdx];
         const text = await file.text();
         const imgAnns = text.split('\n').filter(l => l.trim()).map(line => {
-          const [cls, xc, yc, w, h] = line.split(/\s+/).map(Number);
-          return { id: Math.random(), type: 'box', class: cls, coords: { x: (xc - w/2) * 1000, y: (yc - h/2) * 1000, w: w * 1000, h: h * 1000 } };
-        });
+          const parts = line.split(/\s+/).map(Number);
+          if (parts.length < 5) return null;
+          const [cls, xc, yc, w, h] = parts;
+          // Scale relative coordinates to absolute image pixels
+          return { 
+            id: Math.random(), 
+            type: 'box', 
+            class: cls, 
+            coords: { 
+              x: (xc - w/2) * img.width, 
+              y: (yc - h/2) * img.height, 
+              w: w * img.width, 
+              h: h * img.height 
+            } 
+          };
+        }).filter(a => a);
         newAnnotations[imgIdx] = [...(newAnnotations[imgIdx] || []), ...imgAnns];
       }
     }
-    setAnnotations(newAnnotations); setShowImportHub(false);
+    setAnnotations(newAnnotations); 
+    setShowImportHub(false);
   };
+
 
   const handleDownloadVOC = async () => {
     const zip = new JSZip(); const vocFolder = zip.folder("pascal_voc_labels");
@@ -398,16 +449,27 @@ function App() {
       <div className="app-container">
         <header className="app-header">
           <div className="brand">
-            <FileBox size={24} color="var(--accent-color)" />
+            <img src="/omni-logo.png" alt="OmniAnnotate" style={{ width: '28px', height: '28px', objectFit: 'contain' }} />
             <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
-              <span style={{ fontSize: 18, lineHeight: 1 }}>DOSSIER</span>
-              <span style={{ fontSize: 10, color: 'var(--text-dim)', letterSpacing: 2, fontWeight: 500 }}>ANNOTATE_SYS</span>
+              <span style={{ fontSize: 18, lineHeight: 1, fontWeight: 700, letterSpacing: '-0.02em' }}>OMNI<span style={{ color: 'var(--accent-color)' }}>ANNOTATE</span></span>
+              <span style={{ fontSize: 9, color: 'var(--text-dim)', letterSpacing: 3, fontWeight: 600 }}>ADVANCED_MEDIA_ARCHIVE</span>
             </div>
             <div style={{ marginLeft: '12px', fontSize: '10px', color: saveStatus === 'saved' ? 'var(--success-color)' : 'var(--text-dim)', opacity: saveStatus === 'idle' ? 0 : 1, transition: 'opacity 0.3s', fontWeight: 800 }}>
-              {saveStatus === 'syncing' ? 'WRITING...' : 'ARCHIVE_SYNCED'}
+              {saveStatus === 'syncing' ? 'SYNCING...' : 'ARCHIVE_STABLE'}
             </div>
           </div>
 
+          {mediaError && (
+            <motion.div 
+              initial={{ y: -20, opacity: 0 }} 
+              animate={{ y: 0, opacity: 1 }}
+              style={{ background: 'var(--accent-color)', color: 'white', padding: '4px 12px', fontSize: '11px', fontWeight: 700, borderRadius: '2px', display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}
+              onClick={() => document.getElementById('restore-input').click()}
+            >
+              <Zap size={14} /> SESSION EXPIRED: RE-LINK LOCAL IMAGES TO RESTORE VIEWS
+              <input type="file" id="restore-input" multiple hidden onChange={handleRestoreSession} />
+            </motion.div>
+          )}
 
           <div style={{ display: 'flex', gap: '8px' }}>
             <button className="btn btn-primary" onClick={() => setShowImportHub(true)}>
@@ -537,7 +599,7 @@ function App() {
                 <div style={{ width: 120, height: 160, border: '2px dashed var(--border-color)', borderRadius: 2, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 24, background: 'var(--bg-color)', boxShadow: '4px 4px 0px rgba(44, 36, 27, 0.05)' }}>
                   <FolderPlus size={48} color="var(--border-color)" />
                 </div>
-                <h2 style={{ letterSpacing: 4, fontWeight: 700, margin: 0 }}>DOSSIER EMPTY</h2>
+                <h2 style={{ letterSpacing: 4, fontWeight: 700, margin: 0 }}>OMNIANNOTATE EMPTY</h2>
                 <p style={{ fontSize: 12, color: 'var(--text-dim)', marginTop: 8, maxWidth: 300 }}>
                   Awaiting image files for classification. Proceed with initialization via batch import.
                 </p>
@@ -610,7 +672,12 @@ function App() {
                   onClick={() => setCurrentIndex(img.originalIdx)}
                   style={{ position: 'relative' }}
                 >
-                  <img src={img.url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                  <img 
+                    src={img.url} 
+                    alt={img.name} 
+                    onError={(e) => { e.target.src = 'https://placehold.co/100x100?text=Error'; console.error('Thumbnail Load Error:', img.name); }}
+                    style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
+                  />
                   <div style={{ 
                     position: 'absolute', top: 4, right: 4, width: 8, height: 8, 
                     borderRadius: '50%', background: hasAnns ? 'var(--success-color)' : 'rgba(0,0,0,0.2)',
