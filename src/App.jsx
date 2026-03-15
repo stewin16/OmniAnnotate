@@ -81,7 +81,7 @@ function App() {
 
   useEffect(() => {
     const handleKey = (e) => {
-      if (e.target.tagName === 'INPUT') return;
+      if (['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName) || e.target.isContentEditable) return;
       const key = e.key.toLowerCase();
       if (e.ctrlKey && key === 'z') {
         if (history.past.length > 0) {
@@ -196,11 +196,7 @@ function App() {
   };
 
   const handleClearWorkspace = () => {
-    if (window.confirm('Wipe entire workspace? This total reset cannot be undone.')) {
-      setImages([]); setAnnotations({}); setHistory({ past: [], present: {}, future: [] });
-      setCurrentIndex(0); setSelectedAnnIds(new Set());
-      localStorage.clear(); window.location.reload();
-    }
+    // Redacted - Removing from UI as per user request
   };
 
   const handleSnapshot = () => {
@@ -218,20 +214,85 @@ function App() {
   };
 
   const handleDownloadFullProject = async () => {
-    const zip = new JSZip(); const imgFolder = zip.folder("images"); const labelFolder = zip.folder("labels");
+    const zip = new JSZip(); 
+    const imgFolder = zip.folder("images"); 
+    const labelFolder = zip.folder("labels");
+    
     for (let i = 0; i < images.length; i++) {
       const img = images[i];
-      try { const response = await fetch(img.url); const blob = await response.blob(); imgFolder.file(img.name, blob); } catch (e) {}
+      try { 
+        const response = await fetch(img.url); 
+        const blob = await response.blob(); 
+        imgFolder.file(img.name, blob); 
+      } catch (e) {}
+
+      // Get real dimensions for normalization
+      const imageDims = await new Promise((resolve) => {
+        const item = new Image();
+        item.onload = () => resolve({ w: item.width, h: item.height });
+        item.onerror = () => resolve({ w: 1000, h: 1000 }); // Fallback
+        item.src = img.url;
+      });
+
       const yoloLines = (annotations[i] || []).filter(a => a.type === 'box').map(ann => {
         const { x, y, w, h } = ann.coords;
-        return `${ann.class} ${((x + w / 2) / 1000).toFixed(6)} ${((y + h / 2) / 1000).toFixed(6)} ${(w / 1000).toFixed(6)} ${(h / 1000).toFixed(6)}`;
+        const xc = (x + w / 2) / imageDims.w;
+        const yc = (y + h / 2) / imageDims.h;
+        const nw = w / imageDims.w;
+        const nh = h / imageDims.h;
+        return `${ann.class} ${xc.toFixed(6)} ${yc.toFixed(6)} ${nw.toFixed(6)} ${nh.toFixed(6)}`;
       });
       labelFolder.file(img.name.replace(/\.[^/.]+$/, "") + ".txt", yoloLines.join('\n'));
     }
     zip.file("classes.txt", classes.join('\n'));
     const content = await zip.generateAsync({ type: "blob" });
     const link = document.createElement('a'); link.href = URL.createObjectURL(content);
-    link.download = `OmniProject_${new Date().toISOString().split('T')[0]}.zip`; link.click();
+    link.download = `OmniProject_YOLO_${new Date().toISOString().split('T')[0]}.zip`; link.click();
+  };
+
+  const handleDownloadCOCO = async () => {
+    const coco = {
+      images: [],
+      annotations: [],
+      categories: classes.map((c, i) => ({ id: i, name: c, supercategory: "none" }))
+    };
+
+    let annId = 1;
+    for (let i = 0; i < images.length; i++) {
+      const img = images[i];
+      const imageDims = await new Promise((resolve) => {
+        const item = new Image();
+        item.onload = () => resolve({ w: item.width, h: item.height });
+        item.src = img.url;
+      });
+
+      coco.images.push({
+        id: i,
+        file_name: img.name,
+        width: imageDims.w,
+        height: imageDims.h
+      });
+
+      const imgAnns = annotations[i] || [];
+      imgAnns.forEach(ann => {
+        if (ann.type === 'box') {
+          const { x, y, w, h } = ann.coords;
+          coco.annotations.push({
+            id: annId++,
+            image_id: i,
+            category_id: ann.class,
+            bbox: [x, y, w, h],
+            area: w * h,
+            segmentation: [],
+            iscrowd: 0
+          });
+        }
+      });
+    }
+
+    const blob = new Blob([JSON.stringify(coco, null, 2)], { type: 'application/json' });
+    const link = document.createElement('a'); link.href = URL.createObjectURL(blob);
+    link.download = `OmniProject_COCO_${new Date().toISOString().split('T')[0]}.json`; link.click();
   };
 
   const handleUnifiedBatchImport = async (e) => {
@@ -264,18 +325,26 @@ function App() {
 
   const handleDownloadVOC = async () => {
     const zip = new JSZip(); const vocFolder = zip.folder("pascal_voc_labels");
-    images.forEach((img, idx) => {
-      const imgAnns = annotations[idx] || []; if (imgAnns.length === 0) return;
-      let xml = `<?xml version="1.0"?><annotation><folder>images</folder><filename>${img.name}</filename><size><width>1000</width><height>1000</height><depth>3</depth></size>`;
+    for (let idx = 0; idx < images.length; idx++) {
+      const img = images[idx];
+      const imgAnns = annotations[idx] || []; if (imgAnns.length === 0) continue;
+      
+      const imageDims = await new Promise((resolve) => {
+        const item = new Image();
+        item.onload = () => resolve({ w: item.width, h: item.height });
+        item.src = img.url;
+      });
+
+      let xml = `<?xml version="1.0"?><annotation><folder>images</folder><filename>${img.name}</filename><size><width>${imageDims.w}</width><height>${imageDims.h}</height><depth>3</depth></size>`;
       imgAnns.forEach(ann => {
         if (ann.type === 'box') {
           const { x, y, w, h } = ann.coords;
-          xml += `<object><name>${classes[ann.class] || 'unknown'}</name><bndbox><xmin>${Math.round(x)}</xmin><ymin>${Math.round(y)}</ymin><xmax>${Math.round(x + w)}</xmax><ymax>${Math.round(y + h)}</ymax></bndbox></object>`;
+          xml += `<object><name>${classes[ann.class] || 'unknown'}</name><pose>Unspecified</pose><truncated>0</truncated><difficult>0</difficult><bndbox><xmin>${Math.round(x)}</xmin><ymin>${Math.round(y)}</ymin><xmax>${Math.round(x + w)}</xmax><ymax>${Math.round(y + h)}</ymax></bndbox></object>`;
         }
       });
       xml += `</annotation>`;
       vocFolder.file(`${img.name.replace(/\.[^/.]+$/, "")}.xml`, xml);
-    });
+    }
     zip.file("classes.txt", classes.join('\n'));
     const content = await zip.generateAsync({ type: "blob" });
     const link = document.createElement('a'); link.href = URL.createObjectURL(content);
@@ -300,10 +369,10 @@ function App() {
           <div style={{ display: 'flex', gap: '8px' }}>
             <button className="btn btn-primary" onClick={() => setShowImportHub(true)}><Upload size={16} /> Import</button>
             <div className="btn-group">
-              <button className="btn btn-success" onClick={handleDownloadFullProject} title="Zip Archive">Archive</button>
+              <button className="btn btn-success" onClick={handleDownloadFullProject} title="YOLO Export">YOLO</button>
+              <button className="btn btn-success" onClick={handleDownloadCOCO} title="COCO Export">COCO</button>
               <button className="btn btn-success" onClick={handleDownloadVOC} title="Pascal VOC XML">VOC</button>
             </div>
-            <button className="btn btn-danger" onClick={handleClearWorkspace}><Trash2 size={16} /></button>
           </div>
           
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px', background: 'rgba(0,0,0,0.03)', padding: '4px 12px', borderRadius: '8px' }}>

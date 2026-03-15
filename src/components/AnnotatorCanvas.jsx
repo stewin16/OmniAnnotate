@@ -174,8 +174,10 @@ const AnnotatorCanvas = forwardRef((props, ref) => {
 
         const isHighlighted = idx === hoveredIdx;
         let displayAnn = ann;
-        if (modificationRef.current && String(modificationRef.current.id) === String(ann.id)) {
-          displayAnn = applyModification(ann, modificationRef.current);
+        if (modificationRef.current) {
+          const mod = modificationRef.current;
+          const isTarget = mod.type === 'move' ? mod.ids.has(String(ann.id)) : String(mod.id) === String(ann.id);
+          if (isTarget) displayAnn = applyModification(ann, mod);
         }
 
         const baseHue = (ann.class ?? 0) * 137.5 % 360;
@@ -280,7 +282,7 @@ const AnnotatorCanvas = forwardRef((props, ref) => {
 
       ctx.restore();
 
-      ctx.strokeStyle = 'rgba(0, 0, 0, 0.15)';
+      ctx.strokeStyle = 'rgba(0, 0, 0, 0.08)';
       ctx.lineWidth = 1;
       ctx.beginPath();
       ctx.moveTo(mousePos.x, 0); ctx.lineTo(mousePos.x, canvas.height);
@@ -312,13 +314,24 @@ const AnnotatorCanvas = forwardRef((props, ref) => {
     const rect = canvasRef.current.getBoundingClientRect();
     const mouseX = e.clientX - rect.left;
     const mouseY = e.clientY - rect.top;
-    const scaleFactor = e.deltaY > 0 ? 0.9 : 1.1;
-    const newScale = transform.scale * scaleFactor;
-    setTransform(prev => ({
-      x: mouseX - (mouseX - prev.x) * scaleFactor,
-      y: mouseY - (mouseY - prev.y) * scaleFactor,
-      scale: newScale
-    }));
+    
+    const zoomSpeed = 0.002;
+    const delta = -e.deltaY * zoomSpeed;
+    const scaleFactor = Math.pow(2, delta);
+    
+    const newScale = Math.max(0.05, Math.min(20, transform.scale * scaleFactor));
+    const actualFactor = newScale / transform.scale;
+
+    const newX = mouseX - (mouseX - prev.x) * actualFactor;
+    const newY = mouseY - (mouseY - prev.y) * actualFactor;
+
+    // Apply same pan bounds
+    const imgW = imgObj.width * newScale;
+    const imgH = imgObj.height * newScale;
+    const boundedX = Math.max(-imgW + 50, Math.min(canvas.width - 50, newX));
+    const boundedY = Math.max(-imgH + 50, Math.min(canvas.height - 50, newY));
+
+    setTransform({ x: boundedX, y: boundedY, scale: newScale });
   };
 
   const handleMouseDown = (e) => {
@@ -438,7 +451,18 @@ const AnnotatorCanvas = forwardRef((props, ref) => {
     const imgY = imgCoords.y;
 
     if (isPanning) {
-      setTransform(prev => ({ ...prev, x: e.clientX - startPan.x, y: e.clientY - startPan.y }));
+      const newX = e.clientX - startPan.x;
+      const newY = e.clientY - startPan.y;
+      
+      // Confinement: Keep at least 50px of image in view
+      const canvas = canvasRef.current;
+      const imgW = imgObj.width * transform.scale;
+      const imgH = imgObj.height * transform.scale;
+      
+      const boundedX = Math.max(-imgW + 50, Math.min(canvas.width - 50, newX));
+      const boundedY = Math.max(-imgH + 50, Math.min(canvas.height - 50, newY));
+
+      setTransform(prev => ({ ...prev, x: boundedX, y: boundedY }));
     } else if (rubberBand) {
       setRubberBand(prev => ({ ...prev, endX: x, endY: y }));
     } else if (dragStateRef.current.isDragging && modificationRef.current) {
@@ -477,7 +501,23 @@ const AnnotatorCanvas = forwardRef((props, ref) => {
       const mod = modificationRef.current;
       const finalAnns = annotations.map(ann => {
         const isModified = mod.type === 'move' ? mod.ids.has(String(ann.id)) : String(ann.id) === String(mod.id);
-        if (isModified) return applyModification(ann, mod);
+        if (isModified) {
+          const updated = applyModification(ann, mod);
+          if (updated.type === 'box') {
+            // Normalize box: ensure positive W/H
+            const { x, y, w, h } = updated.coords;
+            return {
+              ...updated,
+              coords: {
+                x: w < 0 ? x + w : x,
+                y: h < 0 ? y + h : y,
+                w: Math.abs(w),
+                h: Math.abs(h)
+              }
+            };
+          }
+          return updated;
+        }
         return ann;
       });
       onUpdateAnnotations(finalAnns);
