@@ -352,64 +352,88 @@ function App() {
 
   const handleUnifiedBatchImport = async (e) => {
     const files = Array.from(e.target.files);
+    console.log(`[OmniAnnotate] Data Ingestion Started: ${files.length} total files detected.`);
+    
     const imgFiles = files.filter(f => f.type.startsWith('image/'));
     const labelFiles = files.filter(f => f.name.endsWith('.txt') && f.name !== 'classes.txt');
     const classesFile = files.find(f => f.name === 'classes.txt');
 
     if (classesFile) { 
       const text = await classesFile.text(); 
-      setClasses(text.split('\n').map(l => l.trim()).filter(l => l)); 
+      const newClasses = text.split('\n').map(l => l.trim()).filter(l => l);
+      setClasses(newClasses);
+      console.log(`[OmniAnnotate] Classes Indexed: ${newClasses.length} categories found.`);
     }
 
+    // Phase 1: Image Ingestion with Error Handling
     const loadedImages = await Promise.all(imgFiles.map(file => new Promise(resolve => {
       const url = URL.createObjectURL(file);
       const img = new Image();
-      img.onload = () => {
-        resolve({ name: file.name, url, width: img.width, height: img.height, file });
+      img.onload = () => resolve({ name: file.name, url, width: img.width, height: img.height, file });
+      img.onerror = () => {
+        console.error(`[OmniAnnotate] Media Load Failure: ${file.name}`);
+        resolve(null);
       };
       img.src = url;
     })));
 
-    const allImages = [...images, ...loadedImages]; 
-    setImages(allImages);
+    const validImages = loadedImages.filter(img => img);
+    console.log(`[OmniAnnotate] Media Indexed: ${validImages.length} images ready.`);
 
-    const newAnnotations = { ...annotations };
-    for (const file of labelFiles) {
-      const labelBaseName = file.name.replace(/\.[^/.]+$/, "").toLowerCase();
-      // Match image by normalized base name
-      const imgIdx = allImages.findIndex(img => 
-        img.name.replace(/\.[^/.]+$/, "").toLowerCase() === labelBaseName
-      );
+    // Phase 2: Metadata Integration
+    setImages(prevImages => {
+      const allImages = [...prevImages, ...validImages]; 
       
-      if (imgIdx !== -1) {
-        const img = allImages[imgIdx];
-        const text = await file.text();
-        const imgAnns = text.split('\n')
-          .map(l => l.trim())
-          .filter(l => l && !l.startsWith('#')) // Support comments if any
-          .map(line => {
-            const parts = line.split(/\s+/).map(Number);
-            if (parts.length < 5 || parts.some(isNaN)) return null;
-            const [cls, xc, yc, w, h] = parts;
-            // Scale relative coordinates to absolute image pixels
-            return { 
-              id: Math.random(), 
-              type: 'box', 
-              class: cls, 
-              coords: { 
-                x: (xc - w/2) * img.width, 
-                y: (yc - h/2) * img.height, 
-                w: w * img.width, 
-                h: h * img.height 
-              } 
-            };
-          }).filter(a => a);
-        
-        newAnnotations[imgIdx] = [...(newAnnotations[imgIdx] || []), ...imgAnns];
-      }
-    }
-    setAnnotations(newAnnotations); 
+      setAnnotations(prevAnns => {
+        const nextAnns = { ...prevAnns };
+        let boxCount = 0;
+
+        for (const file of labelFiles) {
+          const labelBaseName = file.name.replace(/\.[^/.]+$/, "").toLowerCase();
+          const imgIdx = allImages.findIndex(img => 
+            img.name.replace(/\.[^/.]+$/, "").toLowerCase() === labelBaseName
+          );
+          
+          if (imgIdx !== -1) {
+            const img = allImages[imgIdx];
+            file.text().then(text => {
+              const imgAnns = text.split('\n')
+                .map(l => l.trim())
+                .filter(l => l && !l.startsWith('#'))
+                .map(line => {
+                  const parts = line.split(/\s+/).map(Number);
+                  if (parts.length < 5 || parts.some(isNaN)) return null;
+                  const [cls, xc, yc, w, h] = parts;
+                  boxCount++;
+                  return { 
+                    id: Math.random(), 
+                    type: 'box', 
+                    class: cls, 
+                    coords: { 
+                      x: (xc - w/2) * img.width, 
+                      y: (yc - h/2) * img.height, 
+                      w: w * img.width, 
+                      h: h * img.height 
+                    } 
+                  };
+                }).filter(a => a);
+              
+              setAnnotations(prev => ({
+                ...prev,
+                [imgIdx]: [...(prev[imgIdx] || []), ...imgAnns]
+              }));
+              console.log(`[OmniAnnotate] Synced ${imgAnns.length} boxes to ${img.name}`);
+            });
+          }
+        }
+        return nextAnns;
+      });
+
+      return allImages;
+    });
+
     setShowImportHub(false);
+    alert(`INGESTION COMPLETE:\n${validImages.length} images added.\nLabels are being synced asynchronously.`);
   };
 
 
