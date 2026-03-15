@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   FolderPlus, Upload, Trash2, Crosshair, Move, Hand, Activity, Dna, Download,
   Layers, Package, ChevronRight, ChevronLeft, Hexagon, Maximize, MousePointer2,
-  Image, Folder, XCircle, FileArchive, MousePointerClick, Grid, BoxSelect, Square, Play, Plus, X, Search, FileSymlink, FileBox, Sun, Contrast, Camera, Zap
+  Image, Folder, XCircle, FileArchive, MousePointerClick, Grid, BoxSelect, Square, Play, Plus, X, Search, FileSymlink, FileBox, Sun, Contrast, Camera, Zap, Maximize2
 } from 'lucide-react';
 import AnnotatorCanvas from './components/AnnotatorCanvas';
 import JSZip from 'jszip';
@@ -70,6 +70,10 @@ function App() {
   const [flash, setFlash] = useState(0);
   const [saveStatus, setSaveStatus] = useState('idle'); // 'idle', 'syncing', 'saved'
   const [mediaError, setMediaError] = useState(false);
+  const [isIndexing, setIsIndexing] = useState(false);
+  const [indexProgress, setIndexProgress] = useState({ current: 0, total: 0 });
+  const [classSearch, setClassSearch] = useState('');
+  
   const canvasRef = useRef(null);
 
   useEffect(() => {
@@ -92,12 +96,19 @@ function App() {
 
   useEffect(() => {
     if (images.length > 0 && !mediaError) {
-      const testImg = new Image();
-      testImg.onload = () => setMediaError(false);
-      testImg.onerror = () => setMediaError(true);
-      testImg.src = images[0].url;
+      const interval = setInterval(async () => {
+        const url = images[currentIndex]?.url;
+        if (!url) return;
+        try {
+          const res = await fetch(url, { method: 'HEAD' });
+          if (!res.ok) setMediaError(true);
+        } catch (e) {
+          setMediaError(true);
+        }
+      }, 30000); // Check every 30s
+      return () => clearInterval(interval);
     }
-  }, [images]);
+  }, [images, currentIndex, mediaError]);
 
   const handleRestoreSession = (e) => {
     const files = Array.from(e.target.files);
@@ -168,14 +179,24 @@ function App() {
       if (key === 'h') setShowHUD(!showHUD);
       if (key === '?') setShowHelp(!showHelp);
       if (key === 's') handleSnapshot();
+      if (key === 'f') canvasRef.current?.resetView(); // Fit to View
       if (/^[1-9]$/.test(key)) {
         const idx = parseInt(key) - 1;
         if (idx < classes.length) { setCurrentClass(idx); setAnnoMode('box'); }
       }
+      if (e.ctrlKey && e.key === 'a') {
+        e.preventDefault();
+        const allIds = new Set(
+          (annotations[currentIndex] || [])
+            .filter(ann => !hiddenClasses.has(ann.class))
+            .map(ann => String(ann.id))
+        );
+        setSelectedAnnIds(allIds);
+      }
     };
     window.addEventListener('keydown', handleKey);
     return () => window.removeEventListener('keydown', handleKey);
-  }, [showHUD, showHelp, history, selectedAnnIds, currentIndex, annotations, classes, annoMode, flash]);
+  }, [showHUD, showHelp, history, selectedAnnIds, currentIndex, annotations, classes, annoMode, flash, hiddenClasses]);
 
   const handleUpdateAnnotations = (newAnns) => {
     const nextAnnotations = { ...annotations, [currentIndex]: newAnns };
@@ -352,88 +373,96 @@ function App() {
 
   const handleUnifiedBatchImport = async (e) => {
     const files = Array.from(e.target.files);
-    console.log(`[OmniAnnotate] Data Ingestion Started: ${files.length} total files detected.`);
+    if (files.length === 0) return;
+
+    setIsIndexing(true);
+    setIndexProgress({ current: 0, total: files.length });
+    console.log(`[OmniAnnotate] Elite Ingestion Protocol Initiated: ${files.length} files.`);
     
     const imgFiles = files.filter(f => f.type.startsWith('image/'));
     const labelFiles = files.filter(f => f.name.endsWith('.txt') && f.name !== 'classes.txt');
     const classesFile = files.find(f => f.name === 'classes.txt');
 
+    // 1. Index Classes
     if (classesFile) { 
       const text = await classesFile.text(); 
       const newClasses = text.split('\n').map(l => l.trim()).filter(l => l);
       setClasses(newClasses);
-      console.log(`[OmniAnnotate] Classes Indexed: ${newClasses.length} categories found.`);
     }
 
-    // Phase 1: Image Ingestion with Error Handling
-    const loadedImages = await Promise.all(imgFiles.map(file => new Promise(resolve => {
-      const url = URL.createObjectURL(file);
-      const img = new Image();
-      img.onload = () => resolve({ name: file.name, url, width: img.width, height: img.height, file });
-      img.onerror = () => {
-        console.error(`[OmniAnnotate] Media Load Failure: ${file.name}`);
-        resolve(null);
-      };
-      img.src = url;
-    })));
+    // 2. Index Media (Parallel)
+    const validImages = [];
+    let processedFiles = 0;
 
-    const validImages = loadedImages.filter(img => img);
-    console.log(`[OmniAnnotate] Media Indexed: ${validImages.length} images ready.`);
+    for (const file of imgFiles) {
+      try {
+        const url = URL.createObjectURL(file);
+        const img = await new Promise((resolve, reject) => {
+          const i = new Image();
+          i.onload = () => resolve({ name: file.name, url, width: i.width, height: i.height, file });
+          i.onerror = () => reject();
+          i.src = url;
+        });
+        validImages.push(img);
+      } catch (err) {
+        console.error(`[OmniAnnotate] Extraction Error: ${file.name}`);
+      }
+      processedFiles++;
+      setIndexProgress(prev => ({ ...prev, current: processedFiles }));
+    }
 
-    // Phase 2: Metadata Integration
-    setImages(prevImages => {
-      const allImages = [...prevImages, ...validImages]; 
+    // 3. Reconcile Annotations (Single Pass)
+    const bufferAnns = {};
+    const finalImages = [...images, ...validImages];
+    
+    for (const file of labelFiles) {
+      const labelBaseName = file.name.replace(/\.[^/.]+$/, "").toLowerCase();
+      const imgIdx = finalImages.findIndex(img => 
+        img.name.replace(/\.[^/.]+$/, "").toLowerCase() === labelBaseName
+      );
       
-      setAnnotations(prevAnns => {
-        const nextAnns = { ...prevAnns };
-        let boxCount = 0;
+      if (imgIdx !== -1) {
+        const text = await file.text();
+        const img = finalImages[imgIdx];
+        const imgAnns = text.split('\n')
+          .map(l => l.trim())
+          .filter(l => l && !l.startsWith('#'))
+          .map(line => {
+            const parts = line.split(/\s+/).map(Number);
+            if (parts.length < 5 || parts.some(isNaN)) return null;
+            const [cls, xc, yc, w, h] = parts;
+            return { 
+              id: Math.random(), 
+              type: 'box', 
+              class: cls, 
+              coords: { 
+                x: (xc - w/2) * img.width, 
+                y: (yc - h/2) * img.height, 
+                w: w * img.width, 
+                h: h * img.height 
+              } 
+            };
+          }).filter(a => a);
+        
+        bufferAnns[imgIdx] = [...(bufferAnns[imgIdx] || []), ...imgAnns];
+      }
+      processedFiles++;
+      setIndexProgress(prev => ({ ...prev, current: processedFiles }));
+    }
 
-        for (const file of labelFiles) {
-          const labelBaseName = file.name.replace(/\.[^/.]+$/, "").toLowerCase();
-          const imgIdx = allImages.findIndex(img => 
-            img.name.replace(/\.[^/.]+$/, "").toLowerCase() === labelBaseName
-          );
-          
-          if (imgIdx !== -1) {
-            const img = allImages[imgIdx];
-            file.text().then(text => {
-              const imgAnns = text.split('\n')
-                .map(l => l.trim())
-                .filter(l => l && !l.startsWith('#'))
-                .map(line => {
-                  const parts = line.split(/\s+/).map(Number);
-                  if (parts.length < 5 || parts.some(isNaN)) return null;
-                  const [cls, xc, yc, w, h] = parts;
-                  boxCount++;
-                  return { 
-                    id: Math.random(), 
-                    type: 'box', 
-                    class: cls, 
-                    coords: { 
-                      x: (xc - w/2) * img.width, 
-                      y: (yc - h/2) * img.height, 
-                      w: w * img.width, 
-                      h: h * img.height 
-                    } 
-                  };
-                }).filter(a => a);
-              
-              setAnnotations(prev => ({
-                ...prev,
-                [imgIdx]: [...(prev[imgIdx] || []), ...imgAnns]
-              }));
-              console.log(`[OmniAnnotate] Synced ${imgAnns.length} boxes to ${img.name}`);
-            });
-          }
-        }
-        return nextAnns;
+    // 4. Batch State Commit
+    setImages(finalImages);
+    setAnnotations(prev => {
+      const next = { ...prev };
+      Object.keys(bufferAnns).forEach(idx => {
+        next[idx] = [...(next[idx] || []), ...bufferAnns[idx]];
       });
-
-      return allImages;
+      return next;
     });
 
+    setIsIndexing(false);
     setShowImportHub(false);
-    alert(`INGESTION COMPLETE:\n${validImages.length} images added.\nLabels are being synced asynchronously.`);
+    console.log(`[OmniAnnotate] Ingestion Success: ${validImages.length} images, ${Object.values(bufferAnns).flat().length} boxes.`);
   };
 
 
@@ -517,6 +546,14 @@ function App() {
               <FileSymlink size={16} /> INDEX FILES
             </button>
             <div className="btn-group">
+              <button 
+                className="btn btn-secondary"
+                onClick={() => {
+                  canvasRef.current?.resetView();
+                }}
+              >
+                <Maximize2 size={16} /> FIT TO VIEW
+              </button>
               <button className="btn btn-success" onClick={handleDownloadFullProject} title="YOLO Export">YOLO</button>
               <button className="btn btn-success" onClick={handleDownloadCOCO} title="COCO Export">COCO</button>
               <button className="btn btn-success" onClick={handleDownloadVOC} title="Pascal VOC XML">VOC</button>
@@ -545,6 +582,13 @@ function App() {
               ) : <span style={{ fontWeight: 'bold' }}>0</span>}
               <span style={{ fontSize: 12, fontWeight: 700 }}>/ {images.length}</span>
             </div>
+            <button 
+              className="btn btn-icon" 
+              title="Fit to View (F)"
+              onClick={() => canvasRef.current?.resetView()}
+            >
+              <Maximize2 size={18} />
+            </button>
             <button 
               className="btn-icon" 
               style={{ padding: 8, background: rightSidebarOpen ? 'var(--bg-color)' : 'transparent', borderRadius: 8 }}
@@ -696,10 +740,26 @@ function App() {
             )}
             <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px dashed var(--border-color)', paddingBottom: 12 }}>
               <span style={{ fontSize: 13, fontWeight: 'bold', letterSpacing: 1 }}>CLASSIFICATIONS</span>
-              <button className="btn" style={{ padding: '2px 6px' }} onClick={() => setShowAddClass(true)}><Plus size={14} /></button>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <button className="btn btn-icon" style={{ padding: 4 }} onClick={() => setClassSearch('')} title="Reset Search"><Layers size={14} /></button>
+                <button className="btn" style={{ padding: '2px 6px' }} onClick={() => setShowAddClass(true)}><Plus size={14} /></button>
+              </div>
             </header>
+
+            <div style={{ margin: '12px 0' }}>
+              <div className="search-bar" style={{ background: 'rgba(255,255,255,1)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '4px 12px', display: 'flex', alignItems: 'center' }}>
+                <Search size={14} opacity={0.4} />
+                <input 
+                  placeholder="Search classifications..." 
+                  value={classSearch}
+                  onChange={e => setClassSearch(e.target.value)}
+                  style={{ border: 'none', background: 'transparent', width: '100%', fontSize: '12px', padding: '6px 8px', outline: 'none' }}
+                />
+              </div>
+            </div>
+
             {showAddClass && (
-              <div style={{ padding: '8px', borderBottom: '1px dashed var(--border-color)', display: 'flex', gap: '4px' }}>
+              <div style={{ padding: '8px', borderBottom: '1px dashed var(--border-color)', display: 'flex', gap: '4px', marginBottom: '12px' }}>
                 <input 
                   autoFocus
                   placeholder="Class Name"
@@ -707,11 +767,13 @@ function App() {
                   onChange={e => setNewClassName(e.target.value)}
                   onKeyDown={e => {
                     if (e.key === 'Enter') {
-                      if (newClassName.trim()) setClasses([...classes, newClassName.trim()]);
-                      setNewClassName('');
-                      setShowAddClass(false);
+                      if (newClassName.trim()) {
+                        setClasses([...classes, newClassName.trim()]);
+                        setNewClassName('');
+                        setShowAddClass(false);
+                      }
                     } else if (e.key === 'Escape') {
-                       setShowAddClass(false);
+                      setShowAddClass(false);
                     }
                   }}
                   style={{ flex: 1, border: '1px solid var(--border-color)', background: 'var(--bg-color)', padding: '4px 8px', fontSize: '12px', color: 'var(--text-color)', outline: 'none' }}
@@ -723,22 +785,36 @@ function App() {
                 }}><Plus size={12} /></button>
               </div>
             )}
-            <div style={{ overflowY: 'auto', flex: 1 }}>
 
-              {classes.map((cls, idx) => (
-                <div key={idx} className={`label-item ${currentClass === idx ? 'active' : ''}`} onClick={() => setCurrentClass(idx)}>
-                  <div style={{ width: 16, height: 16, background: `hsl(${idx * 137.5}, 50%, 30%)`, borderRadius: 0, border: '1px solid var(--border-color)' }} />
-                  <input 
-                    className="class-input"
-                    value={cls} 
-                    onChange={(e) => {
-                      const nc = [...classes]; nc[idx] = e.target.value; setClasses(nc);
-                    }}
-                    style={{ flex: 1, border: 'none', background: 'transparent', fontSize: '13px', fontWeight: 600, color: 'inherit', fontFamily: 'var(--font-main)' }}
-                  />
-                  <button className="btn-icon-tiny" onClick={(e) => { e.stopPropagation(); setClasses(classes.filter((_, i) => i !== idx)); }}><X size={12} /></button>
-                </div>
-              ))}
+            <div style={{ overflowY: 'auto', flex: 1 }}>
+              {classes
+                .filter(c => c.toLowerCase().includes(classSearch.toLowerCase()))
+                .map((cls) => {
+                  const originalIdx = classes.indexOf(cls);
+                  const isSelected = currentClass === originalIdx;
+                  return (
+                    <div 
+                      key={originalIdx} 
+                      className={`label-item ${isSelected ? 'active' : ''}`} 
+                      onClick={() => setCurrentClass(originalIdx)}
+                    >
+                      <div style={{ width: 16, height: 16, background: `hsl(${originalIdx * 137.5}, 50%, 50%)`, borderRadius: 0, border: '1px solid var(--border-color)' }} />
+                      <input 
+                        className="class-input"
+                        value={cls} 
+                        onChange={(e) => {
+                          const nc = [...classes]; 
+                          nc[originalIdx] = e.target.value; 
+                          setClasses(nc);
+                        }}
+                        style={{ flex: 1, border: 'none', background: 'transparent', fontSize: '13px', fontWeight: 600, color: 'inherit', fontFamily: 'var(--font-main)' }}
+                      />
+                      <button className="btn-icon-tiny" onClick={(e) => { e.stopPropagation(); setClasses(classes.filter((_, i) => i !== originalIdx)); }}>
+                        <X size={12} />
+                      </button>
+                    </div>
+                  );
+                })}
             </div>
           </aside>
         </main>

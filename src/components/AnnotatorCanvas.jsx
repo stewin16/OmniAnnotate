@@ -185,9 +185,23 @@ const AnnotatorCanvas = forwardRef((props, ref) => {
       ctx.drawImage(imgObj, 0, 0);
       ctx.filter = 'none';
       
-      annotations.forEach((ann, idx) => {
-        if (hiddenClasses.has(ann.class)) return;
+      // Spatial Pruning & Batch Rendering
+      const vw = canvas.width / transform.scale;
+      const vh = canvas.height / transform.scale;
+      const vx = -transform.x / transform.scale;
+      const vy = -transform.y / transform.scale;
 
+      const visibleAnns = annotations.filter(ann => {
+        if (hiddenClasses.has(ann.class)) return false;
+        if (ann.type === 'box') {
+          const { x, y, w, h } = ann.coords;
+          return x + w > vx && x < vx + vw && y + h > vy && y < vy + vh;
+        }
+        return true; // Keep polys for now as they are harder to prune simply
+      });
+
+      visibleAnns.forEach((ann, localIdx) => {
+        const idx = annotations.indexOf(ann);
         const isHighlighted = idx === hoveredIdx;
         let displayAnn = ann;
         if (modificationRef.current) {
