@@ -180,12 +180,13 @@ const AnnotatorCanvas = forwardRef((props, ref) => {
           if (isTarget) displayAnn = applyModification(ann, mod);
         }
 
+        // Use deeper, archival ink colors instead of bright neon
         const baseHue = (ann.class ?? 0) * 137.5 % 360;
-        let color = isHighlighted ? '#fff' : `hsl(${baseHue}, 70%, 50%)`;
-        const fillColor = `hsla(${baseHue}, 70%, 50%, 0.2)`;
+        let color = isHighlighted ? '#f4ecd8' : `hsl(${baseHue}, 50%, 30%)`; // Darker saturation and lightness
+        const fillColor = `hsla(${baseHue}, 50%, 30%, 0.15)`;
         
         const isSelected = selectedIds.has(String(ann.id));
-        if (isSelected) color = '#00f2ff';
+        if (isSelected) color = '#991b1b'; // Red stamp color for selection
 
         ctx.strokeStyle = color;
         ctx.lineWidth = (isSelected ? 4 : 2) / transform.scale;
@@ -202,12 +203,15 @@ const AnnotatorCanvas = forwardRef((props, ref) => {
           ctx.fillRect(x, y, w, h);
 
           if (isSelected) {
-            ctx.fillStyle = 'white';
+            ctx.fillStyle = '#f4ecd8'; // Manila interior for handles
+            ctx.strokeStyle = '#991b1b';
+            ctx.lineWidth = 1 / transform.scale;
             const handles = getBoxHandles(displayAnn.coords);
             handles.forEach(h => {
               ctx.beginPath();
-              ctx.arc(h.x, h.y, 6 / transform.scale, 0, Math.PI * 2);
+              ctx.rect(h.x - 4/transform.scale, h.y - 4/transform.scale, 8/transform.scale, 8/transform.scale); // Square handles
               ctx.fill();
+              ctx.stroke();
             });
           }
         } else if (displayAnn.type === 'poly') {
@@ -237,7 +241,7 @@ const AnnotatorCanvas = forwardRef((props, ref) => {
       });
 
       if (isDrawing && mode === 'box' && drawStart) {
-        ctx.strokeStyle = '#00f2ff';
+        ctx.strokeStyle = '#991b1b';
         ctx.setLineDash([5/transform.scale, 5/transform.scale]);
         const imgStart = toImageCoords(drawStart.x, drawStart.y);
         const imgCurrent = toImageCoords(mousePos.x, mousePos.y);
@@ -260,29 +264,31 @@ const AnnotatorCanvas = forwardRef((props, ref) => {
         const firstPoint = polyPoints[0];
         const d = dist(toImageCoords(mousePos.x, mousePos.y), firstPoint);
         if (d < 15 / transform.scale) {
-          ctx.fillStyle = 'white';
+          ctx.fillStyle = '#f4ecd8';
+          ctx.strokeStyle = '#f59e0b';
           ctx.beginPath();
-          ctx.arc(firstPoint.x, firstPoint.y, 8 / transform.scale, 0, Math.PI * 2);
+          ctx.rect(firstPoint.x - 5/transform.scale, firstPoint.y - 5/transform.scale, 10/transform.scale, 10/transform.scale);
           ctx.fill();
+          ctx.stroke();
         }
       }
 
       if (rubberBand) {
-        ctx.strokeStyle = 'rgba(59, 130, 246, 0.5)';
+        ctx.strokeStyle = 'rgba(44, 36, 27, 0.5)';
         ctx.lineWidth = 1 / transform.scale;
         ctx.setLineDash([5 / transform.scale, 5 / transform.scale]);
         const r = rubberBand;
         const s = toImageCoords(r.startX, r.startY);
         const e = toImageCoords(r.endX, r.endY);
         ctx.strokeRect(s.x, s.y, e.x - s.x, e.y - s.y);
-        ctx.fillStyle = 'rgba(59, 130, 246, 0.05)';
+        ctx.fillStyle = 'rgba(44, 36, 27, 0.05)';
         ctx.fillRect(s.x, s.y, e.x - s.x, e.y - s.y);
         ctx.setLineDash([]);
       }
 
       ctx.restore();
 
-      ctx.strokeStyle = 'rgba(0, 0, 0, 0.08)';
+      ctx.strokeStyle = 'rgba(44, 36, 27, 0.1)';
       ctx.lineWidth = 1;
       ctx.beginPath();
       ctx.moveTo(mousePos.x, 0); ctx.lineTo(mousePos.x, canvas.height);
@@ -290,7 +296,7 @@ const AnnotatorCanvas = forwardRef((props, ref) => {
       ctx.stroke();
 
       if (flash > 0) {
-        ctx.fillStyle = `rgba(0, 132, 255, ${flash * 0.3})`;
+        ctx.fillStyle = `rgba(153, 27, 27, ${flash * 0.2})`; // Red flash
         ctx.fillRect(0, 0, canvas.width, canvas.height);
       }
 
@@ -319,21 +325,23 @@ const AnnotatorCanvas = forwardRef((props, ref) => {
     const delta = -e.deltaY * zoomSpeed;
     const scaleFactor = Math.pow(2, delta);
     
-    const newScale = Math.max(0.05, Math.min(20, transform.scale * scaleFactor));
-    const actualFactor = newScale / transform.scale;
+    const canvas = canvasRef.current;
+    
+    setTransform(prev => {
+      const newScale = Math.max(0.05, Math.min(20, prev.scale * scaleFactor));
+      const actualFactor = newScale / prev.scale;
 
-    const newX = mouseX - (mouseX - prev.x) * actualFactor;
-    const newY = mouseY - (mouseY - prev.y) * actualFactor;
+      const newX = mouseX - (mouseX - prev.x) * actualFactor;
+      const newY = mouseY - (mouseY - prev.y) * actualFactor;
 
-    // Apply same pan bounds
-    const imgW = imgObj.width * newScale;
-    const imgH = imgObj.height * newScale;
-    const boundedX = Math.max(-imgW + 50, Math.min(canvas.width - 50, newX));
-    const boundedY = Math.max(-imgH + 50, Math.min(canvas.height - 50, newY));
+      const imgW = imgObj.width * newScale;
+      const imgH = imgObj.height * newScale;
+      const boundedX = Math.max(-imgW + 50, Math.min(canvas.width - 50, newX));
+      const boundedY = Math.max(-imgH + 50, Math.min(canvas.height - 50, newY));
 
-    setTransform({ x: boundedX, y: boundedY, scale: newScale });
+      return { x: boundedX, y: boundedY, scale: newScale };
+    });
   };
-
   const handleMouseDown = (e) => {
     if (!imgObj) return;
     const rect = canvasRef.current.getBoundingClientRect();

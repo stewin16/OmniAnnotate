@@ -1,10 +1,10 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
+
 import { motion, AnimatePresence } from 'framer-motion';
-import { 
-  Square, Hexagon, MousePointer2, Trash2, Download, Upload, 
-  Settings, HelpCircle, ChevronLeft, ChevronRight, 
-  Eye, EyeOff, Plus, Play, Pause, Sun, Contrast, 
-  Dna, Layers, Zap, Info, X, Save, Camera, FileJson, Crosshair, Archive, Image, XCircle, BarChart3
+import {
+  FolderPlus, Upload, Trash2, Crosshair, Move, Hand, Activity, Dna, Download,
+  Layers, Package, ChevronRight, ChevronLeft, Hexagon, Maximize, MousePointer2,
+  Image, Folder, XCircle, FileArchive, MousePointerClick, Grid, BoxSelect, Square, Play, Plus, X, Search, FileSymlink, FileBox, Sun, Contrast, Camera, Zap
 } from 'lucide-react';
 import AnnotatorCanvas from './components/AnnotatorCanvas';
 import JSZip from 'jszip';
@@ -51,7 +51,7 @@ function App() {
   const [annotations, setAnnotations] = useState(() => {
     const saved = localStorage.getItem('omni_annotations');
     return saved ? JSON.parse(saved) : {};
-  }); 
+  });
 
   const [selectedAnnIds, setSelectedAnnIds] = useState(new Set()); // Support multi-select
   const [showImportHub, setShowImportHub] = useState(false);
@@ -61,14 +61,17 @@ function App() {
   const [hiddenClasses, setHiddenClasses] = useState(new Set());
   const [isSyncing, setIsSyncing] = useState(false);
   const [filterMode, setFilterMode] = useState('all'); // 'all', 'annotated', 'pending'
+  const [showAddClass, setShowAddClass] = useState(false);
+  const [newClassName, setNewClassName] = useState('');
   const [history, setHistory] = useState({ past: [], present: {}, future: [] });
+  const [flash, setFlash] = useState(0);
   const canvasRef = useRef(null);
 
   useEffect(() => {
     if (Object.keys(annotations).length > 0 && history.past.length === 0 && Object.keys(history.present).length === 0) {
       setHistory(prev => ({ ...prev, present: annotations }));
     }
-  }, [annotations]);
+  }, [annotations, history]); // Added history to dependencies
 
   useEffect(() => {
     localStorage.setItem('omni_images', JSON.stringify(images));
@@ -78,6 +81,13 @@ function App() {
     const timeout = setTimeout(() => setIsSyncing(false), 800);
     return () => clearTimeout(timeout);
   }, [images, annotations, classes]);
+
+  useEffect(() => {
+    if (flash > 0) {
+      const timeout = setTimeout(() => setFlash(Math.max(0, flash - 0.1)), 30);
+      return () => clearTimeout(timeout);
+    }
+  }, [flash]);
 
   useEffect(() => {
     const handleKey = (e) => {
@@ -203,9 +213,12 @@ function App() {
     if (!canvasRef.current) return;
     const url = canvasRef.current.getSnapshot();
     if (!url) return;
-    const link = document.createElement('a'); link.href = url;
-    link.download = `OmniAnnotate_Snapshot_${currentIndex + 1}.png`; link.click();
+    const link = document.createElement('a'); 
+    link.href = url;
+    link.download = `OmniAnnotate_Snapshot_${currentIndex + 1}.png`; 
+    link.click();
   };
+
 
   const handleUpload = (e) => {
     const files = Array.from(e.target.files);
@@ -214,16 +227,16 @@ function App() {
   };
 
   const handleDownloadFullProject = async () => {
-    const zip = new JSZip(); 
-    const imgFolder = zip.folder("images"); 
+    const zip = new JSZip();
+    const imgFolder = zip.folder("images");
     const labelFolder = zip.folder("labels");
-    
+
     for (let i = 0; i < images.length; i++) {
       const img = images[i];
-      try { 
-        const response = await fetch(img.url); 
-        const blob = await response.blob(); 
-        imgFolder.file(img.name, blob); 
+      try {
+        const response = await fetch(img.url);
+        const blob = await response.blob();
+        imgFolder.file(img.name, blob);
       } catch (e) {}
 
       // Get real dimensions for normalization
@@ -246,9 +259,12 @@ function App() {
     }
     zip.file("classes.txt", classes.join('\n'));
     const content = await zip.generateAsync({ type: "blob" });
-    const link = document.createElement('a'); link.href = URL.createObjectURL(content);
-    link.download = `OmniProject_YOLO_${new Date().toISOString().split('T')[0]}.zip`; link.click();
+    const link = document.createElement('a'); 
+    link.href = URL.createObjectURL(content);
+    link.download = `OmniProject_YOLO_${new Date().toISOString().split('T')[0]}.zip`; 
+    link.click();
   };
+
 
   const handleDownloadCOCO = async () => {
     const coco = {
@@ -291,9 +307,12 @@ function App() {
     }
 
     const blob = new Blob([JSON.stringify(coco, null, 2)], { type: 'application/json' });
-    const link = document.createElement('a'); link.href = URL.createObjectURL(blob);
-    link.download = `OmniProject_COCO_${new Date().toISOString().split('T')[0]}.json`; link.click();
+    const link = document.createElement('a'); 
+    link.href = URL.createObjectURL(blob);
+    link.download = `OmniProject_COCO_${new Date().toISOString().split('T')[0]}.json`; 
+    link.click();
   };
+
 
   const handleUnifiedBatchImport = async (e) => {
     const files = Array.from(e.target.files);
@@ -328,7 +347,7 @@ function App() {
     for (let idx = 0; idx < images.length; idx++) {
       const img = images[idx];
       const imgAnns = annotations[idx] || []; if (imgAnns.length === 0) continue;
-      
+
       const imageDims = await new Promise((resolve) => {
         const item = new Image();
         item.onload = () => resolve({ w: item.width, h: item.height });
@@ -347,9 +366,12 @@ function App() {
     }
     zip.file("classes.txt", classes.join('\n'));
     const content = await zip.generateAsync({ type: "blob" });
-    const link = document.createElement('a'); link.href = URL.createObjectURL(content);
-    link.download = `VOC_Export_${new Date().toISOString().split('T')[0]}.zip`; link.click();
+    const link = document.createElement('a'); 
+    link.href = URL.createObjectURL(content);
+    link.download = `VOC_Export_${new Date().toISOString().split('T')[0]}.zip`; 
+    link.click();
   };
+
 
   const filteredImages = images.map((img, idx) => ({ ...img, originalIdx: idx })).filter((img) => {
     const hasAnns = (annotations[img.originalIdx] || []).length > 0;
@@ -364,37 +386,57 @@ function App() {
   return (
     <ErrorBoundary>
       <div className="app-container">
-        <header className="app-header glass-panel">
-          <div className="brand"><Crosshair size={24} color="var(--accent-color)" /> <span>OmniAnnotate Master</span></div>
+        <header className="app-header">
+          <div className="brand">
+            <FileBox size={24} color="var(--accent-color)" />
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+              <span style={{ fontSize: 18, lineHeight: 1 }}>DOSSIER</span>
+              <span style={{ fontSize: 10, color: 'var(--text-dim)', letterSpacing: 2, fontWeight: 500 }}>ANNOTATE_SYS</span>
+            </div>
+          </div>
+
           <div style={{ display: 'flex', gap: '8px' }}>
-            <button className="btn btn-primary" onClick={() => setShowImportHub(true)}><Upload size={16} /> Import</button>
+            <button className="btn btn-primary" onClick={() => setShowImportHub(true)}>
+              <FileSymlink size={16} /> INDEX FILES
+            </button>
             <div className="btn-group">
               <button className="btn btn-success" onClick={handleDownloadFullProject} title="YOLO Export">YOLO</button>
               <button className="btn btn-success" onClick={handleDownloadCOCO} title="COCO Export">COCO</button>
               <button className="btn btn-success" onClick={handleDownloadVOC} title="Pascal VOC XML">VOC</button>
             </div>
           </div>
-          
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', background: 'rgba(0,0,0,0.03)', padding: '4px 12px', borderRadius: '8px' }}>
-            <span style={{ fontSize: '11px', fontWeight: '800', opacity: 0.6 }}>JUMP TO:</span>
-            <input 
-              type="number" 
-              min="1" max={images.length} 
-              value={currentIndex + 1}
-              onChange={(e) => {
-                const val = parseInt(e.target.value) - 1;
-                if (val >= 0 && val < images.length) setCurrentIndex(val);
-              }}
-              style={{ width: '50px', border: 'none', background: 'transparent', fontWeight: '800', color: 'var(--accent-color)', textAlign: 'center' }}
-            />
-            <span style={{ fontSize: '11px', fontWeight: '800', opacity: 0.6 }}>/ {images.length}</span>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', background: 'var(--bg-color)', padding: '6px 12px', borderRadius: '2px', border: '1px solid var(--border-color)', boxShadow: 'inset 2px 2px 0px rgba(44, 36, 27, 0.05)' }}>
+            <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-dim)' }}>FILE ID:</span>
+            {images.length > 0 ? (
+              <input
+                type="number"
+                value={currentIndex + 1}
+                onChange={(e) => {
+                  const val = parseInt(e.target.value);
+                  if (!isNaN(val) && val >= 1 && val <= images.length) setCurrentIndex(val - 1);
+                }}
+                style={{ width: 40, background: 'transparent', border: 'none', borderBottom: '1px solid var(--text-color)', textAlign: 'center', fontWeight: 'bold', fontSize: 14, color: 'var(--text-color)', outline: 'none', fontFamily: 'var(--font-main)' }}
+              />
+            ) : <span style={{ fontWeight: 'bold' }}>0</span>}
+            <span style={{ fontSize: 12, fontWeight: 700 }}>/ {images.length}</span>
           </div>
         </header>
 
         <main className="main-content">
-          <aside className="sidebar glass-panel">
+          <aside className="sidebar">
              <div className="sidebar-section">
-                <h3 className="section-title">Workflow Tools</h3>
+                <h3 className="section-title">ANNOTATION TOOLS</h3>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                  <button className={`btn ${annoMode === 'box' ? 'btn-primary' : ''}`} onClick={() => setAnnoMode('box')}><Square size={16} /> BOX</button>
+                  <button className={`btn ${annoMode === 'poly' ? 'btn-primary' : ''}`} onClick={() => setAnnoMode('poly')}><Hexagon size={16} /> POLY</button>
+                  <button className={`btn ${annoMode === 'select' ? 'btn-primary' : ''}`} style={{ gridColumn: 'span 2' }} onClick={() => setAnnoMode('select')}><MousePointer2 size={16} /> SELECT (V)</button>
+                </div>
+             </div>
+
+
+             <div className="sidebar-section">
+                <h3 className="section-title">WORKFLOW TOOLS</h3>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '8px' }}>
                   <button className="btn" onClick={handleCopyToNext} disabled={currentIndex === images.length - 1}>
                     <Plus size={14} /> COPY TO NEXT (N)
@@ -402,15 +444,6 @@ function App() {
                   <button className="btn" onClick={handleDuplicateSelected} disabled={selectedAnnIds.size === 0}>
                     <Layers size={14} /> DUPLICATE (Ctrl+D)
                   </button>
-                </div>
-             </div>
-
-             <div className="sidebar-section">
-                <h3 className="section-title">Annotation Tools</h3>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-                  <button className={`btn ${annoMode === 'box' ? 'btn-primary' : ''}`} onClick={() => setAnnoMode('box')}><Square size={16} /> BOX</button>
-                  <button className={`btn ${annoMode === 'poly' ? 'btn-primary' : ''}`} onClick={() => setAnnoMode('poly')}><Hexagon size={16} /> POLY</button>
-                  <button className={`btn ${annoMode === 'select' ? 'btn-primary' : ''}`} style={{ gridColumn: 'span 2' }} onClick={() => setAnnoMode('select')}><MousePointer2 size={16} /> SELECT (V)</button>
                 </div>
              </div>
 
@@ -427,7 +460,7 @@ function App() {
              )}
 
              <div className="sidebar-section">
-                <h3 className="section-title">Image Engine</h3>
+                <h3 className="section-title">IMAGE ENGINE</h3>
                 <div className="filter-group">
                   <label><Sun size={12} /> Brightness</label>
                   <input type="range" min="50" max="200" value={filters.brightness} onChange={(e) => setFilters({...filters, brightness: e.target.value})} />
@@ -439,10 +472,10 @@ function App() {
           </aside>
 
           <section className="canvas-area">
-            <div className="floating-toolbar glass-panel">
-              <div className={`tool-btn ${filterMode === 'all' ? 'active' : ''}`} onClick={() => setFilterMode('all')} title="Show All">ALL</div>
-              <div className={`tool-btn ${filterMode === 'annotated' ? 'active' : ''}`} onClick={() => setFilterMode('annotated')} title="Annotated">DONE</div>
-              <div className={`tool-btn ${filterMode === 'pending' ? 'active' : ''}`} onClick={() => setFilterMode('pending')} title="Pending">TODO</div>
+            <div className="floating-toolbar">
+              <button className={`tool-btn ${filterMode === 'all' ? 'active' : ''}`} onClick={() => setFilterMode('all')} title="Show All">ALL</button>
+              <button className={`tool-btn ${filterMode === 'annotated' ? 'active' : ''}`} onClick={() => setFilterMode('annotated')} title="Annotated">DONE</button>
+              <button className={`tool-btn ${filterMode === 'pending' ? 'active' : ''}`} onClick={() => setFilterMode('pending')} title="Pending">TODO</button>
               <div style={{ width: '20px', height: '1px', background: 'var(--border-color)', margin: '4px auto' }} />
               <button className="tool-btn" onClick={handleSnapshot} title="Snapshot (S)"><Camera size={20} /></button>
             </div>
@@ -478,30 +511,63 @@ function App() {
                 onSelectIds={setSelectedAnnIds} 
               />
             ) : (
-              <div style={{ textAlign: 'center' }}>
-                <Dna size={64} color="var(--accent-color)" style={{ marginBottom: 24 }} />
-                <h2 style={{ letterSpacing: 4, fontWeight: 900 }}>READY FOR INITIALIZATION</h2>
-                <button className="btn btn-primary" style={{ marginTop: 24 }} onClick={() => setShowImportHub(true)}>START IMPORT</button>
+              <div style={{ textAlign: 'center', opacity: 0.8, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                <div style={{ width: 120, height: 160, border: '2px dashed var(--border-color)', borderRadius: 2, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 24, background: 'var(--bg-color)', boxShadow: '4px 4px 0px rgba(44, 36, 27, 0.05)' }}>
+                  <FolderPlus size={48} color="var(--border-color)" />
+                </div>
+                <h2 style={{ letterSpacing: 4, fontWeight: 700, margin: 0 }}>DOSSIER EMPTY</h2>
+                <p style={{ fontSize: 12, color: 'var(--text-dim)', marginTop: 8, maxWidth: 300 }}>
+                  Awaiting image files for classification. Proceed with initialization via batch import.
+                </p>
+                <button className="btn btn-primary" style={{ marginTop: 24 }} onClick={() => setShowImportHub(true)}>
+                  <FileSymlink size={16}/> INITIALIZE ARCHIVE
+                </button>
               </div>
             )}
           </section>
 
-          <aside className="right-sidebar glass-panel">
-            <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span style={{ fontSize: 13, fontWeight: 'bold' }}>CLASSES</span>
-              <button className="btn" style={{ padding: '4px 8px' }} onClick={() => { const n = prompt('Class:'); if(n) setClasses([...classes, n]); }}><Plus size={14} /></button>
+          <aside className="right-sidebar">
+            <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px dashed var(--border-color)', paddingBottom: 12 }}>
+              <span style={{ fontSize: 13, fontWeight: 'bold', letterSpacing: 1 }}>CLASSIFICATIONS</span>
+              <button className="btn" style={{ padding: '2px 6px' }} onClick={() => setShowAddClass(true)}><Plus size={14} /></button>
             </header>
+            {showAddClass && (
+              <div style={{ padding: '8px', borderBottom: '1px dashed var(--border-color)', display: 'flex', gap: '4px' }}>
+                <input 
+                  autoFocus
+                  placeholder="Class Name"
+                  value={newClassName}
+                  onChange={e => setNewClassName(e.target.value)}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') {
+                      if (newClassName.trim()) setClasses([...classes, newClassName.trim()]);
+                      setNewClassName('');
+                      setShowAddClass(false);
+                    } else if (e.key === 'Escape') {
+                       setShowAddClass(false);
+                    }
+                  }}
+                  style={{ flex: 1, border: '1px solid var(--border-color)', background: 'var(--bg-color)', padding: '4px 8px', fontSize: '12px', color: 'var(--text-color)', outline: 'none' }}
+                />
+                <button className="btn btn-success" style={{ padding: '4px 8px' }} onClick={() => {
+                  if (newClassName.trim()) setClasses([...classes, newClassName.trim()]);
+                  setNewClassName('');
+                  setShowAddClass(false);
+                }}><Plus size={12} /></button>
+              </div>
+            )}
             <div style={{ overflowY: 'auto', flex: 1 }}>
+
               {classes.map((cls, idx) => (
                 <div key={idx} className={`label-item ${currentClass === idx ? 'active' : ''}`} onClick={() => setCurrentClass(idx)}>
-                  <div style={{ width: 12, height: 12, background: `hsl(${idx * 137.5}, 70%, 50%)`, borderRadius: 2 }} />
+                  <div style={{ width: 16, height: 16, background: `hsl(${idx * 137.5}, 50%, 30%)`, borderRadius: 0, border: '1px solid var(--border-color)' }} />
                   <input 
                     className="class-input"
                     value={cls} 
                     onChange={(e) => {
                       const nc = [...classes]; nc[idx] = e.target.value; setClasses(nc);
                     }}
-                    style={{ flex: 1, border: 'none', background: 'transparent', fontSize: '13px', fontWeight: 600, color: 'inherit' }}
+                    style={{ flex: 1, border: 'none', background: 'transparent', fontSize: '13px', fontWeight: 600, color: 'inherit', fontFamily: 'var(--font-main)' }}
                   />
                   <button className="btn-icon-tiny" onClick={(e) => { e.stopPropagation(); setClasses(classes.filter((_, i) => i !== idx)); }}><X size={12} /></button>
                 </div>
@@ -510,8 +576,8 @@ function App() {
           </aside>
         </main>
 
-        <footer className="footer glass-panel">
-          <button className="btn" onClick={() => setCurrentIndex(Math.max(0, currentIndex - 1))}><ChevronLeft /></button>
+        <footer className="footer">
+          <button className="btn" onClick={() => setCurrentIndex(Math.max(0, currentIndex - 1))}><ChevronLeft size={16}/></button>
           <div style={{ flex: 1, display: 'flex', gap: 12, overflowX: 'auto', padding: '10px 0' }}>
             {filteredImages.map((img, i) => {
               const hasAnns = (annotations[img.originalIdx] || []).length > 0;
@@ -526,20 +592,23 @@ function App() {
                   <div style={{ 
                     position: 'absolute', top: 4, right: 4, width: 8, height: 8, 
                     borderRadius: '50%', background: hasAnns ? 'var(--success-color)' : 'rgba(0,0,0,0.2)',
-                    border: '1px solid white'
+                    border: '1px solid var(--bg-color)'
                   }} />
+                  {/* Paper clip / stamped corner visual */}
+                  <div style={{ position: 'absolute', top: 0, left: 0, width: 12, height: 12, background: 'linear-gradient(135deg, transparent 50%, var(--panel-bg) 50%)' }} />
                 </div>
               );
             })}
           </div>
-          <button className="btn" onClick={() => setCurrentIndex(Math.min(images.length - 1, currentIndex + 1))}><ChevronRight /></button>
+
+          <button className="btn" onClick={() => setCurrentIndex(Math.min(images.length - 1, currentIndex + 1))}><ChevronRight size={16}/></button>
         </footer>
 
         <AnimatePresence>
           {showImportHub && (
             <div className="modal-overlay" onClick={() => setShowImportHub(false)}>
-              <motion.div className="import-hub glass-panel" initial={{ scale: 0.9 }} animate={{ scale: 1 }} onClick={e => e.stopPropagation()}>
-                <h2 style={{ marginBottom: 32, fontWeight: 900 }}>IMPORT HUB</h2>
+              <div className="import-hub" onClick={e => e.stopPropagation()}>
+                <h2 style={{ marginBottom: 32, fontWeight: 700, letterSpacing: 2 }}>DOCUMENT RECEIPT</h2>
                 <div className="import-grid">
                   <label className="import-card" style={{ gridColumn: 'span 3', border: '2px solid var(--accent-color)', background: 'rgba(59,130,246,0.05)' }}>
                     <Layers size={48} color="var(--accent-color)" />
@@ -551,9 +620,12 @@ function App() {
                     <h3>Images</h3>
                     <input type="file" multiple accept="image/*" hidden onChange={handleUpload} />
                   </label>
-                  <label className="import-card" onClick={() => setShowImportHub(false)}><XCircle size={32} /> <h3>Close</h3></label>
+                  <label className="import-card" onClick={() => setShowImportHub(false)}>
+                    <XCircle size={32} /> 
+                    <h3>CANCEL</h3>
+                  </label>
                 </div>
-              </motion.div>
+              </div>
             </div>
           )}
         </AnimatePresence>
