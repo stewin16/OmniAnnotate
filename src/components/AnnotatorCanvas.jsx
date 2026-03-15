@@ -33,8 +33,19 @@ const AnnotatorCanvas = forwardRef((props, ref) => {
         return { ...ann, coords: nc };
       });
       onUpdateAnnotations(updatedAnns);
+    },
+    resetView: () => {
+      if (!imgObj) return;
+      const container = containerRef.current;
+      const fitScale = Math.min(container.clientWidth / imgObj.width, container.clientHeight / imgObj.height) * 0.9;
+      setTransform({
+        x: (container.clientWidth - imgObj.width * fitScale) / 2,
+        y: (container.clientHeight - imgObj.height * fitScale) / 2,
+        scale: fitScale
+      });
     }
   }));
+
   
   // Transform State
   const [transform, setTransform] = useState({ x: 0, y: 0, scale: 1 });

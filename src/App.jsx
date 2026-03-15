@@ -65,6 +65,7 @@ function App() {
   const [newClassName, setNewClassName] = useState('');
   const [history, setHistory] = useState({ past: [], present: {}, future: [] });
   const [flash, setFlash] = useState(0);
+  const [saveStatus, setSaveStatus] = useState('idle'); // 'idle', 'syncing', 'saved'
   const canvasRef = useRef(null);
 
   useEffect(() => {
@@ -77,10 +78,13 @@ function App() {
     localStorage.setItem('omni_images', JSON.stringify(images));
     localStorage.setItem('omni_annotations', JSON.stringify(annotations));
     localStorage.setItem('omni_classes', JSON.stringify(classes));
-    setIsSyncing(true);
-    const timeout = setTimeout(() => setIsSyncing(false), 800);
-    return () => clearTimeout(timeout);
+    setSaveStatus('syncing');
+    const timeout = setTimeout(() => setSaveStatus('saved'), 400);
+    const hideTimeout = setTimeout(() => setSaveStatus('idle'), 3000);
+    return () => { clearTimeout(timeout); clearTimeout(hideTimeout); };
+
   }, [images, annotations, classes]);
+
 
   useEffect(() => {
     if (flash > 0) {
@@ -166,7 +170,13 @@ function App() {
     setAnnotations(nextAnnotations);
   };
 
+  const handlePurgeAnnotations = () => {
+    handleUpdateAnnotations([]);
+    setFlash(0.8);
+  };
+
   const handleCopyToNext = () => {
+
     if (currentIndex >= images.length - 1) return;
     const currentAnns = annotations[currentIndex] || [];
     if (currentAnns.length === 0) return;
@@ -393,7 +403,11 @@ function App() {
               <span style={{ fontSize: 18, lineHeight: 1 }}>DOSSIER</span>
               <span style={{ fontSize: 10, color: 'var(--text-dim)', letterSpacing: 2, fontWeight: 500 }}>ANNOTATE_SYS</span>
             </div>
+            <div style={{ marginLeft: '12px', fontSize: '10px', color: saveStatus === 'saved' ? 'var(--success-color)' : 'var(--text-dim)', opacity: saveStatus === 'idle' ? 0 : 1, transition: 'opacity 0.3s', fontWeight: 800 }}>
+              {saveStatus === 'syncing' ? 'WRITING...' : 'ARCHIVE_SYNCED'}
+            </div>
           </div>
+
 
           <div style={{ display: 'flex', gap: '8px' }}>
             <button className="btn btn-primary" onClick={() => setShowImportHub(true)}>
@@ -435,7 +449,7 @@ function App() {
              </div>
 
 
-             <div className="sidebar-section">
+              <div className="sidebar-section">
                 <h3 className="section-title">WORKFLOW TOOLS</h3>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '8px' }}>
                   <button className="btn" onClick={handleCopyToNext} disabled={currentIndex === images.length - 1}>
@@ -444,8 +458,12 @@ function App() {
                   <button className="btn" onClick={handleDuplicateSelected} disabled={selectedAnnIds.size === 0}>
                     <Layers size={14} /> DUPLICATE (Ctrl+D)
                   </button>
+                  <button className="btn btn-danger" style={{ marginTop: '12px' }} onClick={handlePurgeAnnotations} disabled={!annotations[currentIndex] || annotations[currentIndex].length === 0}>
+                    <Trash2 size={14} /> PURGE DATA
+                  </button>
                 </div>
              </div>
+
 
              {selectedBoxes.length === 1 && selectedBoxes[0].type === 'box' && (
                <div className="sidebar-section" style={{ background: 'rgba(59,130,246,0.03)', border: '1px solid rgba(59,130,246,0.1)' }}>
@@ -477,8 +495,12 @@ function App() {
               <button className={`tool-btn ${filterMode === 'annotated' ? 'active' : ''}`} onClick={() => setFilterMode('annotated')} title="Annotated">DONE</button>
               <button className={`tool-btn ${filterMode === 'pending' ? 'active' : ''}`} onClick={() => setFilterMode('pending')} title="Pending">TODO</button>
               <div style={{ width: '20px', height: '1px', background: 'var(--border-color)', margin: '4px auto' }} />
+              <button className="tool-btn" onClick={() => canvasRef.current.resetView()} title="Center View"><Maximize size={20} /></button>
               <button className="tool-btn" onClick={handleSnapshot} title="Snapshot (S)"><Camera size={20} /></button>
+              <button className="tool-btn" onClick={() => setShowHelp(true)} title="Help (?)"><Search size={20} /></button>
             </div>
+
+
 
             <AnimatePresence>
               {showHUD && (
@@ -605,7 +627,35 @@ function App() {
         </footer>
 
         <AnimatePresence>
+          {showHelp && (
+            <div className="modal-overlay" onClick={() => setShowHelp(false)}>
+              <div className="modal-content" style={{ maxWidth: '500px' }} onClick={e => e.stopPropagation()}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', borderBottom: '2px solid var(--accent-color)', paddingBottom: '12px' }}>
+                  <h2 style={{ margin: 0, letterSpacing: 2 }}>OPERATIONAL MANUAL</h2>
+                  <button className="btn-icon" onClick={() => setShowHelp(false)}><X size={20}/></button>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '80px 1fr', gap: '16px 24px', fontSize: '14px' }}>
+                  <span style={{ fontWeight: 800, color: 'var(--accent-color)' }}>B</span> <span>Activate Bounding Box Mode</span>
+                  <span style={{ fontWeight: 800, color: 'var(--accent-color)' }}>P</span> <span>Activate Polygon Mode</span>
+                  <span style={{ fontWeight: 800, color: 'var(--accent-color)' }}>V</span> <span>Activate Selection Mode</span>
+                  <span style={{ fontWeight: 800, color: 'var(--accent-color)' }}>N</span> <span>Copy current data to next image</span>
+                  <span style={{ fontWeight: 800, color: 'var(--accent-color)' }}>DEL/BS</span> <span>Remove selected objects</span>
+                  <span style={{ fontWeight: 800, color: 'var(--accent-color)' }}>1-9</span> <span>Quick-switch active class</span>
+                  <span style={{ fontWeight: 800, color: 'var(--accent-color)' }}>CTRL+D</span> <span>Duplicate selected objects</span>
+                  <span style={{ fontWeight: 800, color: 'var(--accent-color)' }}>CTRL+Z/Y</span> <span>Undo / Redo history</span>
+                  <span style={{ fontWeight: 800, color: 'var(--accent-color)' }}>H</span> <span>Toggle HUD overlay visibility</span>
+                  <span style={{ fontWeight: 800, color: 'var(--accent-color)' }}>S</span> <span>Capture image snapshot</span>
+                  <span style={{ fontWeight: 800, color: 'var(--accent-color)' }}>SPACE</span> <span>Hold to Pan map view</span>
+                </div>
+                <div style={{ marginTop: '32px', textAlign: 'center', opacity: 0.6, fontSize: '11px', borderTop: '1px dashed var(--border-color)', paddingTop: '16px' }}>
+                  CONFIDENTIAL ARCHIVAL SYSTEM // VERSION 1.0.42
+                </div>
+              </div>
+            </div>
+          )}
+
           {showImportHub && (
+
             <div className="modal-overlay" onClick={() => setShowImportHub(false)}>
               <div className="import-hub" onClick={e => e.stopPropagation()}>
                 <h2 style={{ marginBottom: 32, fontWeight: 700, letterSpacing: 2 }}>DOCUMENT RECEIPT</h2>
