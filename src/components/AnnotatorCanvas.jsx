@@ -202,7 +202,7 @@ const AnnotatorCanvas = forwardRef((props, ref) => {
         const fillColor = `hsla(${baseHue}, 50%, 30%, 0.15)`;
         
         const isSelected = selectedIds.has(String(ann.id));
-        if (isSelected) color = '#991b1b'; // Red stamp color for selection
+        if (isSelected) color = 'var(--accent-color)'; // Sky blue for selection
 
         ctx.strokeStyle = color;
         ctx.lineWidth = (isSelected ? 4 : 2) / transform.scale;
@@ -220,7 +220,7 @@ const AnnotatorCanvas = forwardRef((props, ref) => {
 
           if (isSelected) {
             ctx.fillStyle = '#f4ecd8'; // Manila interior for handles
-            ctx.strokeStyle = '#991b1b';
+            ctx.strokeStyle = '#0284c7'; // Indigo/Deep Sky blue for focus
             ctx.lineWidth = 1 / transform.scale;
             const handles = getBoxHandles(displayAnn.coords);
             handles.forEach(h => {
@@ -257,7 +257,7 @@ const AnnotatorCanvas = forwardRef((props, ref) => {
       });
 
       if (isDrawing && mode === 'box' && drawStart) {
-        ctx.strokeStyle = '#991b1b';
+        ctx.strokeStyle = '#0284c7';
         ctx.setLineDash([5/transform.scale, 5/transform.scale]);
         const imgStart = toImageCoords(drawStart.x, drawStart.y);
         const imgCurrent = toImageCoords(mousePos.x, mousePos.y);

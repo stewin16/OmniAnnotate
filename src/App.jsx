@@ -451,8 +451,8 @@ function App() {
           <div className="brand">
             <img src="/omni-logo.png" alt="OmniAnnotate" style={{ width: '28px', height: '28px', objectFit: 'contain' }} />
             <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
-              <span style={{ fontSize: 18, lineHeight: 1, fontWeight: 700, letterSpacing: '-0.02em' }}>OMNI<span style={{ color: 'var(--accent-color)' }}>ANNOTATE</span></span>
-              <span style={{ fontSize: 9, color: 'var(--text-dim)', letterSpacing: 3, fontWeight: 600 }}>ADVANCED_MEDIA_ARCHIVE</span>
+                <h2 style={{ letterSpacing: 1, fontWeight: 800, margin: 0, color: '#0f172a' }}>OMNI<span style={{ color: 'var(--accent-color)' }}>ANNOTATE</span></h2>
+                <span style={{ fontSize: 10, color: 'var(--text-dim)', letterSpacing: 1, fontWeight: 700 }}>ADVANCED_PRECISION_MEDIA_SUITE</span>
             </div>
             <div style={{ marginLeft: '12px', fontSize: '10px', color: saveStatus === 'saved' ? 'var(--success-color)' : 'var(--text-dim)', opacity: saveStatus === 'idle' ? 0 : 1, transition: 'opacity 0.3s', fontWeight: 800 }}>
               {saveStatus === 'syncing' ? 'SYNCING...' : 'ARCHIVE_STABLE'}
@@ -596,13 +596,18 @@ function App() {
               />
             ) : (
               <div style={{ textAlign: 'center', opacity: 0.8, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                <div style={{ width: 120, height: 160, border: '2px dashed var(--border-color)', borderRadius: 2, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 24, background: 'var(--bg-color)', boxShadow: '4px 4px 0px rgba(44, 36, 27, 0.05)' }}>
-                  <FolderPlus size={48} color="var(--border-color)" />
+              <div style={{ width: 140, height: 180, border: '1px solid var(--border-color)', borderRadius: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 24, background: 'white', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.05)' }}>
+                <div style={{ position: 'relative' }}>
+                  <FolderPlus size={64} color="var(--accent-color)" opacity={0.4} />
+                  <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <Zap size={24} color="var(--accent-color)" />
+                  </div>
                 </div>
-                <h2 style={{ letterSpacing: 4, fontWeight: 700, margin: 0 }}>OMNIANNOTATE EMPTY</h2>
-                <p style={{ fontSize: 12, color: 'var(--text-dim)', marginTop: 8, maxWidth: 300 }}>
-                  Awaiting image files for classification. Proceed with initialization via batch import.
-                </p>
+              </div>
+              <h2 style={{ letterSpacing: 1, fontWeight: 800, margin: 0, color: '#0f172a' }}>OMNIANNOTATE EMPTY</h2>
+              <p style={{ fontSize: 13, color: 'var(--text-dim)', marginTop: 12, maxWidth: 320, textAlign: 'center', lineHeight: 1.6 }}>
+                Awaiting media assets for precision classification. Proceed via the <b>INDEX FILES</b> portal to begin.
+              </p>
                 <button className="btn btn-primary" style={{ marginTop: 24 }} onClick={() => setShowImportHub(true)}>
                   <FileSymlink size={16}/> INITIALIZE ARCHIVE
                 </button>
@@ -725,24 +730,29 @@ function App() {
 
             <div className="modal-overlay" onClick={() => setShowImportHub(false)}>
               <div className="import-hub" onClick={e => e.stopPropagation()}>
-                <h2 style={{ marginBottom: 32, fontWeight: 700, letterSpacing: 2 }}>DOCUMENT RECEIPT</h2>
-                <div className="import-grid">
-                  <label className="import-card" style={{ gridColumn: 'span 3', border: '2px solid var(--accent-color)', background: 'rgba(59,130,246,0.05)' }}>
-                    <Layers size={48} color="var(--accent-color)" />
-                    <h3>BATCH IMPORT (YOLO)</h3>
-                    <input type="file" multiple hidden onChange={handleUnifiedBatchImport} />
-                  </label>
-                  <label className="import-card">
-                    <Image size={32} />
-                    <h3>Images</h3>
-                    <input type="file" multiple accept="image/*" hidden onChange={handleUpload} />
-                  </label>
-                  <label className="import-card" onClick={() => setShowImportHub(false)}>
-                    <XCircle size={32} /> 
-                    <h3>CANCEL</h3>
-                  </label>
-                </div>
+              <button 
+                className="btn-icon" 
+                style={{ position: 'absolute', top: 24, right: 24, padding: 8, background: '#f1f5f9', borderRadius: '50%' }}
+                onClick={() => setShowImportHub(false)}
+              >
+                <X size={20} />
+              </button>
+              <h2 style={{ marginBottom: 32, fontWeight: 800, letterSpacing: 1, color: '#0f172a' }}>IMPORT ASSETS</h2>
+              <div className="import-grid">
+                <label className="import-card" style={{ gridColumn: 'span 3', border: '2px solid var(--accent-color)', background: 'rgba(14,165,233,0.05)' }}>
+                  <Layers size={48} color="var(--accent-color)" />
+                  <h3 style={{ margin: 0, fontWeight: 700 }}>PROJECT BATCH (YOLO)</h3>
+                  <p style={{ fontSize: 12, opacity: 0.6, margin: 0 }}>Import images, labels, and classes collectively</p>
+                  <input type="file" multiple hidden onChange={handleUnifiedBatchImport} />
+                </label>
+                <label className="import-card" style={{ gridColumn: 'span 3' }}>
+                  <Image size={32} color="var(--accent-color)" />
+                  <h3 style={{ margin: 0, fontWeight: 700 }}>MEDIA UPLOAD</h3>
+                  <p style={{ fontSize: 12, opacity: 0.6, margin: 0 }}>Add individual image documents to current archive</p>
+                  <input type="file" multiple accept="image/*" hidden onChange={handleUpload} />
+                </label>
               </div>
+            </div>
             </div>
           )}
         </AnimatePresence>
