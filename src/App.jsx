@@ -83,7 +83,9 @@ function App() {
   }, [annotations, history]); // Added history to dependencies
 
   useEffect(() => {
-    localStorage.setItem('omni_images', JSON.stringify(images));
+    // Save only serializable metadata. Blobs and Files are transient.
+    const imageMetadata = images.map(({ name, width, height }) => ({ name, width, height }));
+    localStorage.setItem('omni_images', JSON.stringify(imageMetadata));
     localStorage.setItem('omni_annotations', JSON.stringify(annotations));
     localStorage.setItem('omni_classes', JSON.stringify(classes));
     setSaveStatus('syncing');
@@ -95,17 +97,27 @@ function App() {
 
 
   useEffect(() => {
-    if (images.length > 0 && !mediaError) {
-      const interval = setInterval(async () => {
-        const url = images[currentIndex]?.url;
-        if (!url) return;
+    if (images.length > 0) {
+      const checkMedia = async () => {
+        const current = images[currentIndex];
+        if (!current) return;
+        
+        // If no URL exists, it's definitely expired (from localStorage restore)
+        if (!current.url) {
+          setMediaError(true);
+          return;
+        }
+
         try {
-          const res = await fetch(url, { method: 'HEAD' });
+          const res = await fetch(current.url, { method: 'HEAD' });
           if (!res.ok) setMediaError(true);
         } catch (e) {
           setMediaError(true);
         }
-      }, 30000); // Check every 30s
+      };
+      
+      checkMedia();
+      const interval = setInterval(checkMedia, 15000);
       return () => clearInterval(interval);
     }
   }, [images, currentIndex, mediaError]);
@@ -121,6 +133,15 @@ function App() {
     });
     setImages(updatedImages);
     setMediaError(false);
+  };
+
+  const clearDeadSession = () => {
+    setImages([]);
+    setAnnotations({});
+    setClasses(DEFAULT_CLASSES);
+    setCurrentIndex(0);
+    setMediaError(false);
+    localStorage.clear();
   };
 
   useEffect(() => {
@@ -298,13 +319,8 @@ function App() {
         imgFolder.file(img.name, blob);
       } catch (e) {}
 
-      // Get real dimensions for normalization
-      const imageDims = await new Promise((resolve) => {
-        const item = new Image();
-        item.onload = () => resolve({ w: item.width, h: item.height });
-        item.onerror = () => resolve({ w: 1000, h: 1000 }); // Fallback
-        item.src = img.url;
-      });
+      // Get real dimensions from state to prevent 1000x1000 ghost exports on dead blobs
+      const imageDims = { w: img.width || 1000, h: img.height || 1000 };
 
       const yoloLines = (annotations[i] || []).filter(a => a.type === 'box').map(ann => {
         const { x, y, w, h } = ann.coords;
@@ -337,11 +353,8 @@ function App() {
     let annId = 1;
     for (let i = 0; i < images.length; i++) {
       const img = images[i];
-      const imageDims = await new Promise((resolve) => {
-        const item = new Image();
-        item.onload = () => resolve({ w: item.width, h: item.height });
-        item.src = img.url;
-      });
+      // Use cached dimensions to prevent 1000x1000 ghost normalization on dead blobs
+      const imageDims = { w: img.width || 1000, h: img.height || 1000 };
 
       coco.images.push({
         id: i,
@@ -389,11 +402,12 @@ function App() {
     const labelFiles = files.filter(f => f.name.endsWith('.txt') && f.name !== 'classes.txt');
     const classesFile = files.find(f => f.name === 'classes.txt');
 
+    let updatedClasses = [...classes];
+
     // 1. Index Classes
     if (classesFile) { 
       const text = await classesFile.text(); 
-      const newClasses = text.split('\n').map(l => l.trim()).filter(l => l);
-      setClasses(newClasses);
+      updatedClasses = text.split('\n').map(l => l.trim()).filter(l => l);
     }
 
     // 2. Index Media (Parallel)
@@ -421,26 +435,47 @@ function App() {
     const bufferAnns = {};
     const finalImages = [...images, ...validImages];
     
+    // Create a lookup for images by name (lowercase, no ext) to handle complex folder structures
+    const imgLookup = {};
+    finalImages.forEach((img, idx) => {
+      const base = img.name.replace(/\.[^/.]+$/, "").toLowerCase();
+      imgLookup[base] = idx;
+    });
+
     for (const file of labelFiles) {
       const labelBaseName = file.name.replace(/\.[^/.]+$/, "").toLowerCase();
-      const imgIdx = finalImages.findIndex(img => 
-        img.name.replace(/\.[^/.]+$/, "").toLowerCase() === labelBaseName
-      );
+      const imgIdx = imgLookup[labelBaseName];
       
-      if (imgIdx !== -1) {
+      if (imgIdx !== undefined) {
         const text = await file.text();
         const img = finalImages[imgIdx];
         const imgAnns = text.split('\n')
           .map(l => l.trim())
           .filter(l => l && !l.startsWith('#'))
           .map(line => {
-            const parts = line.split(/\s+/).map(Number);
-            if (parts.length < 5 || parts.some(isNaN)) return null;
-            const [cls, xc, yc, w, h] = parts;
+            const parts = line.split(/\s+/);
+            if (parts.length < 5) return null;
+            
+            const rawCls = parts[0];
+            const coords = parts.slice(1, 5).map(Number);
+            if (coords.some(isNaN)) return null;
+
+            let classIdx;
+            if (isNaN(Number(rawCls))) {
+               classIdx = updatedClasses.indexOf(rawCls);
+               if (classIdx === -1) {
+                 updatedClasses.push(rawCls);
+                 classIdx = updatedClasses.length - 1;
+               }
+            } else {
+               classIdx = Number(rawCls);
+            }
+
+            const [xc, yc, w, h] = coords;
             return { 
               id: Math.random(), 
               type: 'box', 
-              class: cls, 
+              class: classIdx, 
               coords: { 
                 x: (xc - w/2) * img.width, 
                 y: (yc - h/2) * img.height, 
@@ -457,6 +492,7 @@ function App() {
     }
 
     // 4. Batch State Commit
+    setClasses(updatedClasses);
     setImages(finalImages);
     setAnnotations(prev => {
       const next = { ...prev };
@@ -466,6 +502,10 @@ function App() {
       return next;
     });
 
+    if (validImages.length > 0) {
+       setCurrentIndex(images.length);
+    }
+    
     setIsIndexing(false);
     setShowImportHub(false);
     console.log(`[OmniAnnotate] Ingestion Success: ${validImages.length} images, ${Object.values(bufferAnns).flat().length} boxes.`);
@@ -478,11 +518,8 @@ function App() {
       const img = images[idx];
       const imgAnns = annotations[idx] || []; if (imgAnns.length === 0) continue;
 
-      const imageDims = await new Promise((resolve) => {
-        const item = new Image();
-        item.onload = () => resolve({ w: item.width, h: item.height });
-        item.src = img.url;
-      });
+      // Use cached dimensions to prevent 1000x1000 ghost normalization on dead blobs
+      const imageDims = { w: img.width || 1000, h: img.height || 1000 };
 
       let xml = `<?xml version="1.0"?><annotation><folder>images</folder><filename>${img.name}</filename><size><width>${imageDims.w}</width><height>${imageDims.h}</height><depth>3</depth></size>`;
       imgAnns.forEach(ann => {
@@ -541,10 +578,24 @@ function App() {
             <motion.div 
               initial={{ y: -20, opacity: 0 }} 
               animate={{ y: 0, opacity: 1 }}
-              style={{ background: 'var(--accent-color)', color: 'white', padding: '4px 12px', fontSize: '11px', fontWeight: 700, borderRadius: '2px', display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}
-              onClick={() => document.getElementById('restore-input').click()}
+              style={{ background: 'var(--accent-color)', color: 'white', padding: '4px 12px', fontSize: '11px', fontWeight: 700, borderRadius: '2px', display: 'flex', alignItems: 'center', gap: '8px' }}
             >
-              <Zap size={14} /> SESSION EXPIRED: RE-LINK LOCAL IMAGES TO RESTORE VIEWS
+              <Zap size={14} /> EXPIRED LINKS: 
+              <button 
+                className="btn btn-icon" 
+                style={{ padding: '2px 8px', background: 'rgba(255,255,255,0.2)', color: 'white' }} 
+                onClick={() => document.getElementById('restore-input').click()}
+              >
+                RE-LINK
+              </button>
+              <span style={{opacity: 0.5}}>|</span>
+              <button 
+                className="btn btn-icon" 
+                style={{ padding: '2px 8px', background: 'rgba(255,255,255,0.2)', color: 'white' }} 
+                onClick={clearDeadSession}
+              >
+                RESET WORKSPACE
+              </button>
               <input type="file" id="restore-input" multiple hidden onChange={handleRestoreSession} />
             </motion.div>
           )}
@@ -903,9 +954,9 @@ function App() {
               <div className="import-grid">
                 <label className="import-card" style={{ gridColumn: 'span 3', border: '2px solid var(--accent-color)', background: 'rgba(14,165,233,0.05)' }}>
                   <Layers size={48} color="var(--accent-color)" />
-                  <h3 style={{ margin: 0, fontWeight: 700 }}>PROJECT BATCH (YOLO)</h3>
-                  <p style={{ fontSize: 12, opacity: 0.6, margin: 0 }}>Import images, labels, and classes collectively</p>
-                  <input type="file" multiple hidden onChange={handleUnifiedBatchImport} />
+                  <h3 style={{ margin: 0, fontWeight: 700 }}>PROJECT FOLDER (YOLO)</h3>
+                  <p style={{ fontSize: 12, opacity: 0.6, margin: 0 }}>Select the entire batch folder containing images and labels</p>
+                  <input type="file" multiple webkitdirectory="" directory="" hidden onChange={handleUnifiedBatchImport} />
                 </label>
                 <label className="import-card" style={{ gridColumn: 'span 3' }}>
                   <Image size={32} color="var(--accent-color)" />
