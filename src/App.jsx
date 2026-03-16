@@ -392,15 +392,19 @@ function App() {
 
   const handleUnifiedBatchImport = async (e) => {
     const files = Array.from(e.target.files);
-    if (files.length === 0) return;
+    console.log(`[OmniAnnotate] Raw file count from input: ${files.length}`);
 
+    if (files.length === 0) return;
+    
     setIsIndexing(true);
     setIndexProgress({ current: 0, total: files.length });
-    console.log(`[OmniAnnotate] Elite Ingestion Protocol Initiated: ${files.length} files.`);
-    
+    console.log(`[OmniAnnotate] Elite Ingestion Protocol Initiated: ${files.length} total files discovered.`);
+
     const imgFiles = files.filter(f => f.type.startsWith('image/') || f.name.match(/\.(jpg|jpeg|png|webp|bmp|gif)$/i));
     const labelFiles = files.filter(f => f.name.endsWith('.txt') && f.name !== 'classes.txt');
     const classesFile = files.find(f => f.name === 'classes.txt');
+
+    console.log(`[OmniAnnotate] Pre-Ingestion Filter: ${imgFiles.length} images, ${labelFiles.length} labels identified.`);
 
     let updatedClasses = [...classes];
 
@@ -435,20 +439,40 @@ function App() {
     const bufferAnns = {};
     const finalImages = [...images, ...validImages];
     
-    // Create a lookup for images by name (lowercase, no ext) to handle complex folder structures
+    // Create a robust lookup using relative paths for directory imports
     const imgLookup = {};
     finalImages.forEach((img, idx) => {
-      const base = img.name.replace(/\.[^/.]+$/, "").toLowerCase();
-      imgLookup[base] = idx;
+      // Use full relative path if available, else just name
+      const pathKey = (img.file?.webkitRelativePath || img.name).toLowerCase();
+      imgLookup[pathKey] = idx;
     });
 
+    let matchCount = 0;
     for (const file of labelFiles) {
-      const labelBaseName = file.name.replace(/\.[^/.]+$/, "").toLowerCase();
-      const imgIdx = imgLookup[labelBaseName];
+      const labelPath = file.webkitRelativePath || file.name;
+      // Heuristic: swap 'labels' for 'images' and '.txt' for an image extension
+      // Or just try to match the filename if path matching fails
+      let matchedIdx = -1;
+
+      // Plan A: Path-based matching (robust for subfolders)
+      const possibleImagePath = labelPath.replace(/[\\\/]labels[\\\/]/i, '/images/').replace(/\.txt$/i, '');
+      const searchKeys = Object.keys(imgLookup);
+      const foundKey = searchKeys.find(k => k.startsWith(possibleImagePath.toLowerCase()));
       
-      if (imgIdx !== undefined) {
+      if (foundKey) {
+        matchedIdx = imgLookup[foundKey];
+      } else {
+        // Plan B: Filename-based fallback
+        const labelBase = file.name.replace(/\.[^/.]+$/, "").toLowerCase();
+        matchedIdx = finalImages.findIndex(img => 
+          img.name.replace(/\.[^/.]+$/, "").toLowerCase() === labelBase
+        );
+      }
+      
+      if (matchedIdx !== -1) {
+        matchCount++;
         const text = await file.text();
-        const img = finalImages[imgIdx];
+        const img = finalImages[matchedIdx];
         const imgAnns = text.split('\n')
           .map(l => l.trim())
           .filter(l => l && !l.startsWith('#'))
@@ -485,11 +509,12 @@ function App() {
             };
           }).filter(a => a);
         
-        bufferAnns[imgIdx] = [...(bufferAnns[imgIdx] || []), ...imgAnns];
+        bufferAnns[matchedIdx] = [...(bufferAnns[matchedIdx] || []), ...imgAnns];
       }
       processedFiles++;
       setIndexProgress(prev => ({ ...prev, current: processedFiles }));
     }
+    console.log(`[OmniAnnotate] Reconciliation Complete: Matched ${matchCount} labels using path heuristics.`);
 
     // 4. Batch State Commit
     setClasses(updatedClasses);
@@ -508,6 +533,7 @@ function App() {
     
     setIsIndexing(false);
     setShowImportHub(false);
+    if (e.target) e.target.value = ''; // Reset for re-selection 
     console.log(`[OmniAnnotate] Ingestion Success: ${validImages.length} images, ${Object.values(bufferAnns).flat().length} boxes.`);
   };
 
@@ -956,7 +982,14 @@ function App() {
                   <Layers size={48} color="var(--accent-color)" />
                   <h3 style={{ margin: 0, fontWeight: 700 }}>PROJECT FOLDER (YOLO)</h3>
                   <p style={{ fontSize: 12, opacity: 0.6, margin: 0 }}>Select the entire batch folder containing images and labels</p>
-                  <input type="file" multiple webkitdirectory="" directory="" hidden onChange={handleUnifiedBatchImport} />
+                  <input 
+                    type="file" 
+                    multiple 
+                    webkitdirectory="" 
+                    directory="" 
+                    hidden 
+                    onChange={handleUnifiedBatchImport} 
+                  />
                 </label>
                 <label className="import-card" style={{ gridColumn: 'span 3' }}>
                   <Image size={32} color="var(--accent-color)" />

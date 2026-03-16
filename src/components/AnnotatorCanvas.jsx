@@ -158,6 +158,9 @@ const AnnotatorCanvas = forwardRef((props, ref) => {
         scale: fitScale
       });
     };
+    img.onerror = () => {
+      console.error(`[OmniAnnotate] Invisibility Alert: Failed to render media ${image.name}. Link might be revoked or corrupt.`);
+    };
   }, [image]);
 
   const toImageCoords = useCallback((canvasX, canvasY) => ({
