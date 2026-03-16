@@ -272,14 +272,16 @@ function App() {
 
   const handleUpload = async (e) => {
     const files = Array.from(e.target.files);
-    const loadedImages = await Promise.all(files.map(file => new Promise(resolve => {
+    const loadedPromises = files.map(file => new Promise(resolve => {
       const url = URL.createObjectURL(file);
       const img = new Image();
       img.onload = () => {
         resolve({ name: file.name, url, width: img.width, height: img.height, file });
       };
+      img.onerror = () => resolve(null);
       img.src = url;
-    })));
+    }));
+    const loadedImages = (await Promise.all(loadedPromises)).filter(img => img !== null);
     setImages(prev => [...prev, ...loadedImages]);
   };
 
@@ -319,7 +321,9 @@ function App() {
     const link = document.createElement('a'); 
     link.href = URL.createObjectURL(content);
     link.download = `OmniProject_YOLO_${new Date().toISOString().split('T')[0]}.zip`; 
+    document.body.appendChild(link);
     link.click();
+    document.body.removeChild(link);
   };
 
 
@@ -367,7 +371,9 @@ function App() {
     const link = document.createElement('a'); 
     link.href = URL.createObjectURL(blob);
     link.download = `OmniProject_COCO_${new Date().toISOString().split('T')[0]}.json`; 
+    document.body.appendChild(link);
     link.click();
+    document.body.removeChild(link);
   };
 
 
@@ -379,7 +385,7 @@ function App() {
     setIndexProgress({ current: 0, total: files.length });
     console.log(`[OmniAnnotate] Elite Ingestion Protocol Initiated: ${files.length} files.`);
     
-    const imgFiles = files.filter(f => f.type.startsWith('image/'));
+    const imgFiles = files.filter(f => f.type.startsWith('image/') || f.name.match(/\.(jpg|jpeg|png|webp|bmp|gif)$/i));
     const labelFiles = files.filter(f => f.name.endsWith('.txt') && f.name !== 'classes.txt');
     const classesFile = files.find(f => f.name === 'classes.txt');
 
@@ -493,7 +499,9 @@ function App() {
     const link = document.createElement('a'); 
     link.href = URL.createObjectURL(content);
     link.download = `VOC_Export_${new Date().toISOString().split('T')[0]}.zip`; 
+    document.body.appendChild(link);
     link.click();
+    document.body.removeChild(link);
   };
 
 
